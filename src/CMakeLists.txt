@@ -205,6 +205,7 @@ if(PCM_BUILD_EXECUTABLES)
         # specific file for pcm-raw project
         if(${PROJECT_NAME} STREQUAL pcm-raw)
             set(LIBS ${LIBS} PCM_SIMDJSON)
+            target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/event-resolver.cpp)
         endif(${PROJECT_NAME} STREQUAL pcm-raw)
 
         if(${PROJECT_NAME} STREQUAL pcm-sensor-server)

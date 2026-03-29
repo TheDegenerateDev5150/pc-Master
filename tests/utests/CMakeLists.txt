@@ -17,6 +17,7 @@ endif()
 file(GLOB LSPCI_TEST_FILES lspci-utest.cpp ${CMAKE_SOURCE_DIR}/src/lspci.cpp)
 file(GLOB PCM_IIO_TEST_FILES pcm-iio-utest.cpp ${CMAKE_SOURCE_DIR}/src/pcm-iio-pmu.cpp ${CMAKE_SOURCE_DIR}/src/pcm-iio-topology.cpp)
 file(GLOB READ_NUMBER_TEST_FILES read-number-utest.cpp)
+file(GLOB EVENT_RESOLVER_TEST_FILES event-resolver-utest.cpp ${CMAKE_SOURCE_DIR}/src/event-resolver.cpp)
 
 if(APPLE)
     set(LIBS PcmMsr Threads::Threads PCM_STATIC)
@@ -27,12 +28,23 @@ endif()
 add_executable(lspci-utest ${LSPCI_TEST_FILES})
 add_executable(pcm-iio-utest ${PCM_IIO_TEST_FILES})
 add_executable(read-number-utest ${READ_NUMBER_TEST_FILES})
+add_executable(event-resolver-utest ${EVENT_RESOLVER_TEST_FILES})
 
 configure_file(
     ${CMAKE_SOURCE_DIR}/src/opCode-6-174.txt
     ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/opCode-6-174.txt
     COPYONLY
 )
+
+# Copy perfmon data for event-resolver tests.
+# build/bin/ copy is for CI (test.sh CWD), utests copy is for local dev.
+# PMURegisterDeclarations is copied to build/bin/ by src/CMakeLists.txt.
+file(COPY ${CMAKE_SOURCE_DIR}/perfmon
+     DESTINATION ${CMAKE_BINARY_DIR}/bin)
+file(COPY ${CMAKE_SOURCE_DIR}/perfmon
+     DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+file(COPY ${CMAKE_SOURCE_DIR}/src/PMURegisterDeclarations
+     DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 target_link_libraries(
     lspci-utest
@@ -55,7 +67,16 @@ target_link_libraries(
     ${LIBS}
 )
 
+target_link_libraries(
+    event-resolver-utest
+    GTest::gtest_main
+    GTest::gmock_main
+    ${LIBS}
+    PCM_SIMDJSON
+)
+
 include(GoogleTest)
 gtest_discover_tests(lspci-utest)
 gtest_discover_tests(pcm-iio-utest)
 gtest_discover_tests(read-number-utest)
+gtest_discover_tests(event-resolver-utest)
