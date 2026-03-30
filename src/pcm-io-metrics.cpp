@@ -84,6 +84,47 @@ struct FormulaParser {
     }
 };
 
+struct BoxChars {
+    const char* horizontal;
+    const char* vertical;
+    const char* top_left;
+    const char* top_right;
+    const char* bottom_left;
+    const char* bottom_right;
+    const char* tee_down;
+    const char* tee_up;
+    const char* tee_right;
+    const char* tee_left;
+    const char* cross;
+};
+
+#ifdef _MSC_VER
+static const BoxChars BOX {
+    "\xC4", "\xB3", "\xDA", "\xBF", "\xC0", "\xD9",
+    "\xC2", "\xC1", "\xC3", "\xB4", "\xC5"
+};
+#else
+static const BoxChars BOX {
+    u8"\u2500", u8"\u2502", u8"\u250C", u8"\u2510",
+    u8"\u2514", u8"\u2518", u8"\u252C", u8"\u2534",
+    u8"\u251C", u8"\u2524", u8"\u253C"
+};
+#endif
+
+void renderLine(std::ostream& os, const char* left, const char* mid,
+                const char* right, const std::vector<size_t>& colWidths)
+{
+    os << left;
+    for (size_t i = 0; i < colWidths.size(); ++i)
+    {
+        for (size_t j = 0; j < colWidths[i]; ++j)
+            os << BOX.horizontal;
+        if (i + 1 < colWidths.size())
+            os << mid;
+    }
+    os << right << "\n";
+}
+
 } // anonymous namespace
 
 double FormulaEvaluator::evaluate(const std::string& formula,
@@ -113,6 +154,136 @@ std::set<std::string> FormulaEvaluator::extractVariables(const std::string& form
         }
     }
     return vars;
+}
+
+// --- TableRenderer ---
+
+void TableRenderer::setHeaders(const std::vector<std::string>& headers)
+{
+    m_headers = headers;
+}
+
+void TableRenderer::addRow(const std::vector<std::string>& values)
+{
+    m_rows.push_back({false, "", values});
+}
+
+void TableRenderer::addSectionHeader(const std::string& title)
+{
+    m_rows.push_back({true, title, {}});
+}
+
+std::vector<size_t> TableRenderer::calculateColumnWidths() const
+{
+    const size_t padding = 2;
+    std::vector<size_t> widths(m_headers.size(), 0);
+    for (size_t i = 0; i < m_headers.size(); ++i)
+        widths[i] = m_headers[i].size();
+    for (const auto& row : m_rows)
+    {
+        if (row.isSectionHeader) continue;
+        for (size_t i = 0; i < row.values.size() && i < widths.size(); ++i)
+            widths[i] = std::max(widths[i], row.values[i].size());
+    }
+    for (auto& w : widths)
+        w += padding;
+    return widths;
+}
+
+size_t TableRenderer::calculateTableWidth(const std::vector<size_t>& colWidths) const
+{
+    // total = sum of column widths + (numCols + 1) border chars
+    // but border chars are multi-byte on Linux; we track display columns here
+    size_t width = colWidths.size() + 1;  // border characters
+    for (auto w : colWidths)
+        width += w;
+    return width;
+}
+
+void TableRenderer::render(std::ostream& os) const
+{
+    if (m_headers.empty()) return;
+
+    auto colWidths = calculateColumnWidths();
+    size_t tableWidth = calculateTableWidth(colWidths);
+    // innerWidth = tableWidth minus the 2 outer border chars (in display columns)
+    size_t innerWidth = tableWidth - 2;
+
+    // Top border
+    renderLine(os, BOX.top_left, BOX.tee_down, BOX.top_right, colWidths);
+
+    // Header row (left-aligned)
+    os << BOX.vertical;
+    for (size_t i = 0; i < m_headers.size(); ++i)
+    {
+        os << " " << m_headers[i];
+        size_t pad = colWidths[i] - 1 - m_headers[i].size();
+        for (size_t j = 0; j < pad; ++j)
+            os << " ";
+        os << BOX.vertical;
+    }
+    os << "\n";
+
+    if (m_rows.empty())
+    {
+        // No data: close immediately
+        renderLine(os, BOX.bottom_left, BOX.tee_up, BOX.bottom_right, colWidths);
+        return;
+    }
+
+    bool needDataSeparator = true;
+    for (size_t ri = 0; ri < m_rows.size(); ++ri)
+    {
+        const auto& row = m_rows[ri];
+        if (row.isSectionHeader)
+        {
+            // Full-width separator before section title
+            os << BOX.tee_right;
+            for (size_t j = 0; j < innerWidth; ++j)
+                os << BOX.horizontal;
+            os << BOX.tee_left << "\n";
+
+            // Section title row (left-aligned, spans full width)
+            os << BOX.vertical << " " << row.sectionTitle;
+            size_t pad = innerWidth - 1 - row.sectionTitle.size();
+            for (size_t j = 0; j < pad; ++j)
+                os << " ";
+            os << BOX.vertical << "\n";
+
+            // Columned separator after section title
+            renderLine(os, BOX.tee_right, BOX.tee_down, BOX.tee_left, colWidths);
+            needDataSeparator = false;
+        }
+        else
+        {
+            if (needDataSeparator)
+            {
+                renderLine(os, BOX.tee_right, BOX.cross, BOX.tee_left, colWidths);
+                needDataSeparator = false;
+            }
+            // Data row (right-aligned)
+            os << BOX.vertical;
+            for (size_t i = 0; i < m_headers.size(); ++i)
+            {
+                const std::string& val = (i < row.values.size()) ? row.values[i] : "";
+                size_t pad = colWidths[i] - 1 - val.size();
+                for (size_t j = 0; j < pad; ++j)
+                    os << " ";
+                os << val << " " << BOX.vertical;
+            }
+            os << "\n";
+        }
+    }
+
+    // Bottom border
+    renderLine(os, BOX.bottom_left, BOX.tee_up, BOX.bottom_right, colWidths);
+}
+
+std::string TableRenderer::renderToString() const
+{
+    std::ostringstream oss;
+    render(oss);
+    return oss.str();
 }
 
 // --- MetricsConfig ---

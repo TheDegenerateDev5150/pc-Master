@@ -6,6 +6,8 @@
 #include <vector>
 #include <set>
 #include <unordered_map>
+#include <sstream>
+#include <ostream>
 
 #ifdef PCM_SIMDJSON_AVAILABLE
 #include <memory>
@@ -25,6 +27,27 @@ class FormulaEvaluator {
 public:
     double evaluate(const std::string& formula, const std::unordered_map<std::string, double>& variables) const;
     std::set<std::string> extractVariables(const std::string& formula) const;
+};
+
+class TableRenderer {
+public:
+    void setHeaders(const std::vector<std::string>& headers);
+    void addRow(const std::vector<std::string>& values);
+    void addSectionHeader(const std::string& title);
+    void render(std::ostream& os) const;
+    std::string renderToString() const;
+
+private:
+    struct Row {
+        bool isSectionHeader = false;
+        std::string sectionTitle;
+        std::vector<std::string> values;
+    };
+    std::vector<std::string> m_headers;
+    std::vector<Row> m_rows;
+
+    std::vector<size_t> calculateColumnWidths() const;
+    size_t calculateTableWidth(const std::vector<size_t>& colWidths) const;
 };
 
 class MetricsConfig {
