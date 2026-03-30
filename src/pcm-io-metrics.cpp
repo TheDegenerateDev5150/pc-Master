@@ -348,7 +348,57 @@ bool MetricsConfig::parseMetrics(simdjson::dom::element doc)
 
         m_metrics.push_back(std::move(m));
     }
+    parseLayout(doc);
     return !m_metrics.empty();
+}
+
+void MetricsConfig::parseLayout(simdjson::dom::element doc)
+{
+    m_layout.clear();
+
+    auto layoutObj = doc["layout"];
+    if (layoutObj.error())
+    {
+        generateFlatLayout();
+        return;
+    }
+
+    auto sectionsArr = layoutObj["sections"];
+    if (sectionsArr.error())
+    {
+        generateFlatLayout();
+        return;
+    }
+
+    try
+    {
+        for (simdjson::dom::object sectionObj : sectionsArr)
+        {
+            LayoutSection section;
+            auto title = sectionObj["title"];
+            if (!title.error())
+            {
+                section.title = std::string{title.get_c_str()};
+            }
+
+            auto metricsArr = sectionObj["metrics"];
+            if (!metricsArr.error())
+            {
+                for (auto metricName : metricsArr.get_array())
+                {
+                    section.metrics.emplace_back(metricName.get_c_str());
+                }
+            }
+            m_layout.emplace_back(std::move(section));
+        }
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "WARNING: Malformed layout section in metrics JSON: " << e.what() << "\n";
+        m_layout.clear();
+    }
+
+    if (m_layout.empty()) generateFlatLayout();
 }
 
 #else // !PCM_SIMDJSON_AVAILABLE
@@ -357,6 +407,17 @@ bool MetricsConfig::load(const std::string&) { return false; }
 bool MetricsConfig::loadFromString(const std::string&) { return false; }
 
 #endif // PCM_SIMDJSON_AVAILABLE
+
+void MetricsConfig::generateFlatLayout()
+{
+    m_layout.clear();
+    LayoutSection section;
+    for (const auto& metric : m_metrics)
+    {
+        section.metrics.emplace_back(metric.name);
+    }
+    m_layout.emplace_back(std::move(section));
+}
 
 std::set<std::string> MetricsConfig::extractEventNames() const
 {

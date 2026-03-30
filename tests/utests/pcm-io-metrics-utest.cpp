@@ -307,3 +307,121 @@ TEST_F(TableRendererTest, RenderEmptyTable)
 
     EXPECT_EQ(result, expected);
 }
+
+// --- Layout Tests ---
+
+static const char* kLayoutMetricsJSON = R"json({
+    "metrics": [
+        { "name": "PCIe Rd (B)", "formula": "A * 64", "short_name": "PCIeRd", "aggregation": "socket" },
+        { "name": "PCIe Wr (B)", "formula": "B * 64", "short_name": "PCIeWr", "aggregation": "socket" },
+        { "name": "Total BW (B)", "formula": "(A + B) * 64", "aggregation": "system" }
+    ],
+    "layout": {
+        "sections": [
+            { "title": "PCIe Bandwidth", "metrics": ["PCIe Rd (B)", "PCIe Wr (B)"] },
+            { "title": "Total", "metrics": ["Total BW (B)"] }
+        ]
+    }
+})json";
+
+TEST(LayoutTest, LayoutParsing)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(kLayoutMetricsJSON));
+
+    const auto& layout = config.getLayout();
+    ASSERT_EQ(layout.size(), 2u);
+
+    EXPECT_EQ(layout[0].title, "PCIe Bandwidth");
+    ASSERT_EQ(layout[0].metrics.size(), 2u);
+    EXPECT_EQ(layout[0].metrics[0], "PCIe Rd (B)");
+    EXPECT_EQ(layout[0].metrics[1], "PCIe Wr (B)");
+
+    EXPECT_EQ(layout[1].title, "Total");
+    ASSERT_EQ(layout[1].metrics.size(), 1u);
+    EXPECT_EQ(layout[1].metrics[0], "Total BW (B)");
+}
+
+TEST(LayoutTest, LayoutMissingUsesFlat)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(kTestMetricsJSON));
+
+    const auto& layout = config.getLayout();
+    ASSERT_EQ(layout.size(), 1u);
+    EXPECT_EQ(layout[0].title, "");
+    ASSERT_EQ(layout[0].metrics.size(), 3u);
+    EXPECT_EQ(layout[0].metrics[0], "PCIe Rd (B)");
+    EXPECT_EQ(layout[0].metrics[1], "PCIe Wr (B)");
+    EXPECT_EQ(layout[0].metrics[2], "Total BW (B)");
+}
+
+TEST(LayoutTest, LayoutEmptySectionsUsesFlat)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(R"json({
+        "metrics": [
+            { "name": "Foo", "formula": "x * 2" }
+        ],
+        "layout": {
+            "sections": []
+        }
+    })json"));
+
+    const auto& layout = config.getLayout();
+    ASSERT_EQ(layout.size(), 1u);
+    EXPECT_EQ(layout[0].title, "");
+    ASSERT_EQ(layout[0].metrics.size(), 1u);
+    EXPECT_EQ(layout[0].metrics[0], "Foo");
+}
+
+TEST(LayoutTest, LayoutSingleSection)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(R"json({
+        "metrics": [
+            { "name": "Read BW", "formula": "R * 64" },
+            { "name": "Write BW", "formula": "W * 64" }
+        ],
+        "layout": {
+            "sections": [
+                { "title": "Bandwidth", "metrics": ["Read BW", "Write BW"] }
+            ]
+        }
+    })json"));
+
+    const auto& layout = config.getLayout();
+    ASSERT_EQ(layout.size(), 1u);
+    EXPECT_EQ(layout[0].title, "Bandwidth");
+    ASSERT_EQ(layout[0].metrics.size(), 2u);
+    EXPECT_EQ(layout[0].metrics[0], "Read BW");
+    EXPECT_EQ(layout[0].metrics[1], "Write BW");
+}
+
+TEST(LayoutTest, LayoutMalformedSection)
+{
+    MetricsConfig config;
+    // Section missing "title" and "metrics" keys — should not crash, load still succeeds
+    ASSERT_TRUE(config.loadFromString(R"json({
+        "metrics": [
+            { "name": "A", "formula": "x * 1" },
+            { "name": "B", "formula": "y * 2" }
+        ],
+        "layout": {
+            "sections": [
+                { "other_key": "irrelevant" },
+                { "title": "Valid", "metrics": ["A"] }
+            ]
+        }
+    })json"));
+
+    const auto& layout = config.getLayout();
+    ASSERT_EQ(layout.size(), 2u);
+    // Malformed section: empty title, no metrics
+    EXPECT_EQ(layout[0].title, "");
+    EXPECT_TRUE(layout[0].metrics.empty());
+    // Valid section still parsed
+    EXPECT_EQ(layout[1].title, "Valid");
+    ASSERT_EQ(layout[1].metrics.size(), 1u);
+    EXPECT_EQ(layout[1].metrics[0], "A");
+}

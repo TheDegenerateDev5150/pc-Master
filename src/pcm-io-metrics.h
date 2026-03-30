@@ -23,6 +23,11 @@ struct IOMetric {
     std::string aggregation;  // "socket", "system", "stack"
 };
 
+struct LayoutSection {
+    std::string title;
+    std::vector<std::string> metrics;  // references IOMetric::name
+};
+
 class FormulaEvaluator {
 public:
     double evaluate(const std::string& formula, const std::unordered_map<std::string, double>& variables) const;
@@ -56,14 +61,19 @@ public:
     bool loadFromString(const std::string& jsonStr);
 
     const std::vector<IOMetric>& getMetrics() const { return m_metrics; }
+    const std::vector<LayoutSection>& getLayout() const { return m_layout; }
     std::set<std::string> extractEventNames() const;
 
 private:
     std::vector<IOMetric> m_metrics;
+    std::vector<LayoutSection> m_layout;
     FormulaEvaluator m_evaluator;
+
+    void generateFlatLayout();
 
 #ifdef PCM_SIMDJSON_AVAILABLE
     bool parseMetrics(simdjson::dom::element doc);
+    void parseLayout(simdjson::dom::element doc);
     std::shared_ptr<simdjson::dom::parser> m_jsonParser;
 #endif
 };
