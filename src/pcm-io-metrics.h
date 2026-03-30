@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <set>
+#include <functional>
 #include <unordered_map>
 #include <sstream>
 #include <ostream>
@@ -26,6 +27,19 @@ struct IOMetric {
 struct LayoutSection {
     std::string title;
     std::vector<std::string> metrics;  // references IOMetric::name
+};
+
+using EventValidator = std::function<bool(const std::string&)>;
+
+struct MetricValidation {
+    std::string metricName;
+    bool valid;
+    std::set<std::string> missingEvents;
+};
+
+struct ValidationResult {
+    std::vector<MetricValidation> metrics;
+    bool allValid() const;
 };
 
 class FormulaEvaluator {
@@ -63,6 +77,8 @@ public:
     const std::vector<IOMetric>& getMetrics() const { return m_metrics; }
     const std::vector<LayoutSection>& getLayout() const { return m_layout; }
     std::set<std::string> extractEventNames() const;
+    ValidationResult validateEvents(const EventValidator& validator) const;
+    void printValidatedMetrics(std::ostream& os, const EventValidator& validator) const;
 
 private:
     std::vector<IOMetric> m_metrics;

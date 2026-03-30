@@ -430,4 +430,58 @@ std::set<std::string> MetricsConfig::extractEventNames() const
     return allEvents;
 }
 
+bool ValidationResult::allValid() const
+{
+    for (const auto& m : metrics)
+    {
+        if (!m.valid) return false;
+    }
+    return true;
+}
+
+ValidationResult MetricsConfig::validateEvents(const EventValidator& validator) const
+{
+    ValidationResult result;
+    for (const auto& metric : m_metrics)
+    {
+        MetricValidation mv;
+        mv.metricName = metric.name;
+        auto vars = m_evaluator.extractVariables(metric.formula);
+        for (const auto& var : vars)
+        {
+            if (!validator(var))
+            {
+                mv.missingEvents.insert(var);
+            }
+        }
+        mv.valid = mv.missingEvents.empty();
+        result.metrics.emplace_back(std::move(mv));
+    }
+    return result;
+}
+
+void MetricsConfig::printValidatedMetrics(std::ostream& os, const EventValidator& validator) const
+{
+    auto result = validateEvents(validator);
+    size_t validCount = 0;
+    for (const auto& mv : result.metrics)
+    {
+        if (mv.valid)
+        {
+            os << "  [OK]       " << mv.metricName << "\n";
+            ++validCount;
+        }
+        else
+        {
+            os << "  [INVALID]  " << mv.metricName << "  (missing:";
+            for (const auto& ev : mv.missingEvents)
+            {
+                os << " " << ev;
+            }
+            os << ")\n";
+        }
+    }
+    os << "\n" << validCount << " of " << result.metrics.size() << " metrics valid\n";
+}
+
 } // namespace pcm

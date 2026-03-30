@@ -425,3 +425,82 @@ TEST(LayoutTest, LayoutMalformedSection)
     ASSERT_EQ(layout[1].metrics.size(), 1u);
     EXPECT_EQ(layout[1].metrics[0], "A");
 }
+
+// --- Validation Tests ---
+
+TEST(ValidationTest, ValidateAllEventsPresent)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(kTestMetricsJSON));
+
+    auto result = config.validateEvents([](const std::string&) { return true; });
+
+    EXPECT_TRUE(result.allValid());
+    ASSERT_EQ(result.metrics.size(), 3u);
+    for (const auto& m : result.metrics)
+    {
+        EXPECT_TRUE(m.valid);
+        EXPECT_TRUE(m.missingEvents.empty());
+    }
+}
+
+TEST(ValidationTest, ValidateMissingEvent)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(kTestMetricsJSON));
+
+    auto result = config.validateEvents([](const std::string& event) {
+        return event != "UNC_CHA_TOR_INSERTS.IO_ITOMCACHENEAR";
+    });
+
+    EXPECT_FALSE(result.allValid());
+    // Metric 0 "PCIe Rd (B)": formula uses only IO_PCIRDCUR -> valid
+    EXPECT_TRUE(result.metrics[0].valid);
+    // Metric 1 "PCIe Wr (B)": formula uses IO_ITOM + IO_ITOMCACHENEAR -> invalid
+    EXPECT_FALSE(result.metrics[1].valid);
+    ASSERT_EQ(result.metrics[1].missingEvents.size(), 1u);
+    EXPECT_EQ(result.metrics[1].missingEvents.count("UNC_CHA_TOR_INSERTS.IO_ITOMCACHENEAR"), 1u);
+    // Metric 2 "Total BW (B)": formula uses all three -> invalid
+    EXPECT_FALSE(result.metrics[2].valid);
+    ASSERT_EQ(result.metrics[2].missingEvents.size(), 1u);
+    EXPECT_EQ(result.metrics[2].missingEvents.count("UNC_CHA_TOR_INSERTS.IO_ITOMCACHENEAR"), 1u);
+}
+
+TEST(ValidationTest, ValidateMultipleMissing)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(kTestMetricsJSON));
+
+    auto result = config.validateEvents([](const std::string&) { return false; });
+
+    EXPECT_FALSE(result.allValid());
+    ASSERT_EQ(result.metrics.size(), 3u);
+    for (const auto& m : result.metrics)
+    {
+        EXPECT_FALSE(m.valid);
+        EXPECT_FALSE(m.missingEvents.empty());
+    }
+    // Metric 0 has 1 event, metric 1 has 2, metric 2 has 3
+    EXPECT_EQ(result.metrics[0].missingEvents.size(), 1u);
+    EXPECT_EQ(result.metrics[1].missingEvents.size(), 2u);
+    EXPECT_EQ(result.metrics[2].missingEvents.size(), 3u);
+}
+
+TEST(ValidationTest, PrintValidatedMetrics)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(kTestMetricsJSON));
+
+    std::ostringstream os;
+    config.printValidatedMetrics(os, [](const std::string& event) {
+        return event != "UNC_CHA_TOR_INSERTS.IO_ITOMCACHENEAR";
+    });
+
+    std::string output = os.str();
+    EXPECT_NE(output.find("[OK]"), std::string::npos);
+    EXPECT_NE(output.find("PCIe Rd (B)"), std::string::npos);
+    EXPECT_NE(output.find("[INVALID]"), std::string::npos);
+    EXPECT_NE(output.find("PCIe Wr (B)"), std::string::npos);
+    EXPECT_NE(output.find("UNC_CHA_TOR_INSERTS.IO_ITOMCACHENEAR"), std::string::npos);
+    EXPECT_NE(output.find("1 of 3 metrics valid"), std::string::npos);
+}
