@@ -61,6 +61,17 @@ private:
     };
     std::unordered_map<std::string, EventLocation> m_eventLocations;
 
+    // PMU counter reading dispatch
+    using CounterGetter = std::function<uint64(uint32 unit, uint32 counter,
+        const ServerUncoreCounterState& before, const ServerUncoreCounterState& after)>;
+    using UnitCountGetter = std::function<size_t(uint32 socket)>;
+    struct PMUCounterDesc {
+        CounterGetter getter;
+        UnitCountGetter getNumUnits;
+    };
+    std::unordered_map<std::string, PMUCounterDesc> m_pmuCounterDescs;
+    void initPMUCounterDescs();
+
     std::vector<ServerUncoreCounterState> m_beforeState;
     std::vector<ServerUncoreCounterState> m_afterState;
     std::vector<std::unordered_map<std::string, double>> m_counterValues;
@@ -145,6 +156,7 @@ bool MetricsDrivenPlatform::init(PCM* pcm, const std::string& metricsPath, const
     m_counterValues.resize(m_numSockets);
 
     m_display.init(&m_config, m_numSockets);
+    initPMUCounterDescs();
 
     // Read initial "before" state right after programming
     m_pcm->globalFreezeUncoreCounters();
@@ -172,6 +184,59 @@ void MetricsDrivenPlatform::collect(int delayMs)
     std::swap(m_beforeState, m_afterState);
 }
 
+void MetricsDrivenPlatform::initPMUCounterDescs()
+{
+    // Helper for discovery-based PMUs (CBO, MDF, PCU, UBOX, and future DMR types)
+    auto discoveryDesc = [this](int pmuId) -> PMUCounterDesc {
+        return {
+            [pmuId](uint32 u, uint32 c, const ServerUncoreCounterState& b, const ServerUncoreCounterState& a) {
+                return getUncoreCounter(pmuId, u, c, b, a);
+            },
+            [this, pmuId](uint32 s) { return m_pcm->getMaxNumOfUncorePMUs(pmuId, s); }
+        };
+    };
+
+    m_pmuCounterDescs["cbo"] = discoveryDesc(PCM::CBO_PMU_ID);
+    m_pmuCounterDescs["cha"] = discoveryDesc(PCM::CBO_PMU_ID);
+    m_pmuCounterDescs["pcu"] = discoveryDesc(PCM::PCU_PMU_ID);
+    m_pmuCounterDescs["ubox"] = discoveryDesc(PCM::UBOX_PMU_ID);
+    m_pmuCounterDescs["mdf"] = discoveryDesc(PCM::MDF_PMU_ID);
+
+    // IIO / IRP — indexed by stack
+    m_pmuCounterDescs["iio"] = {
+        [](uint32 u, uint32 c, const ServerUncoreCounterState& b, const ServerUncoreCounterState& a) { return getIIOCounter(u, c, b, a); },
+        [this](uint32) { return static_cast<size_t>(m_pcm->getMaxNumOfIIOStacks()); }
+    };
+    m_pmuCounterDescs["irp"] = {
+        [](uint32 u, uint32 c, const ServerUncoreCounterState& b, const ServerUncoreCounterState& a) { return getIRPCounter(u, c, b, a); },
+        [this](uint32) { return static_cast<size_t>(m_pcm->getMaxNumOfIIOStacks()); }
+    };
+
+    // Memory controller
+    m_pmuCounterDescs["imc"] = {
+        [](uint32 u, uint32 c, const ServerUncoreCounterState& b, const ServerUncoreCounterState& a) { return getMCCounter(u, c, b, a); },
+        [this](uint32) { return static_cast<size_t>(m_pcm->getMCChannelsPerSocket()); }
+    };
+    m_pmuCounterDescs["m2m"] = {
+        [](uint32 u, uint32 c, const ServerUncoreCounterState& b, const ServerUncoreCounterState& a) { return getM2MCounter(u, c, b, a); },
+        [this](uint32) { return static_cast<size_t>(m_pcm->getMCPerSocket()); }
+    };
+
+    // UPI / M3UPI interconnect
+    PMUCounterDesc upiDesc = {
+        [](uint32 u, uint32 c, const ServerUncoreCounterState& b, const ServerUncoreCounterState& a) { return getXPICounter(u, c, b, a); },
+        [this](uint32) { return static_cast<size_t>(m_pcm->getQPILinksPerSocket()); }
+    };
+    m_pmuCounterDescs["xpi"] = upiDesc;
+    m_pmuCounterDescs["upi"] = upiDesc;
+    m_pmuCounterDescs["qpi"] = upiDesc;
+
+    m_pmuCounterDescs["m3upi"] = {
+        [](uint32 u, uint32 c, const ServerUncoreCounterState& b, const ServerUncoreCounterState& a) { return getM3UPICounter(u, c, b, a); },
+        [this](uint32) { return static_cast<size_t>(m_pcm->getQPILinksPerSocket()); }
+    };
+}
+
 void MetricsDrivenPlatform::readCounterValues()
 {
     for (uint32 s = 0; s < m_numSockets; ++s)
@@ -179,16 +244,16 @@ void MetricsDrivenPlatform::readCounterValues()
         m_counterValues[s].clear();
         for (const auto& [eventName, loc] : m_eventLocations)
         {
-            auto pmuId = m_pcm->strToUncorePMUID(loc.pmuName);
-            if (pmuId == PCM::INVALID_PMU_ID) continue;
+            auto it = m_pmuCounterDescs.find(loc.pmuName);
+            if (it == m_pmuCounterDescs.end()) continue;
 
-            size_t numUnits = m_pcm->getMaxNumOfUncorePMUs(pmuId, s);
+            const auto& desc = it->second;
+            size_t numUnits = desc.getNumUnits(s);
             double sum = 0.0;
             for (size_t u = 0; u < numUnits; ++u)
             {
-                sum += static_cast<double>(
-                    getUncoreCounter(pmuId, (uint32)u, (uint32)loc.counterIndex,
-                                     m_beforeState[s], m_afterState[s]));
+                sum += static_cast<double>(desc.getter((uint32)u, (uint32)loc.counterIndex,
+                                           m_beforeState[s], m_afterState[s]));
             }
             m_counterValues[s][eventName] = sum;
         }
