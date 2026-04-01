@@ -519,6 +519,65 @@ static void print_usage(const string& progname)
     cout << "\n";
 }
 
+static std::string findMetricsPath(const std::string& programPath, const std::string& platformDir)
+{
+    if (platformDir.empty()) return "";
+
+    const std::string relPath = "pmu-events/" + platformDir + "/metrics.json";
+
+    // 1. Next to the binary (post-build copy)
+    size_t lastSlash = programPath.find_last_of('/');
+    std::string binDir = (lastSlash != std::string::npos) ? programPath.substr(0, lastSlash) : ".";
+    std::string candidate = binDir + "/" + relPath;
+    if (std::ifstream(candidate).good()) return candidate;
+
+    // 2. Install path
+    candidate = getInstallPathPrefix() + relPath;
+    if (std::ifstream(candidate).good()) return candidate;
+
+    return "";
+}
+
+static void print_available_metrics(const string& metricsPath, const string& platformDir)
+{
+    if (metricsPath.empty()) return;
+
+    MetricsConfig config;
+    if (!config.load(metricsPath)) return;
+
+    cout << " Available metrics for " << platformDir << ":\n\n";
+
+    const auto& layout = config.getLayout();
+    const auto& metrics = config.getMetrics();
+
+    if (layout.size() > 1)
+    {
+        for (const auto& section : layout)
+        {
+            if (!section.title.empty())
+                cout << "  [" << section.title << "]\n";
+            for (const auto& metricName : section.metrics)
+            {
+                for (const auto& metric : metrics)
+                {
+                    if (metric.name == metricName)
+                    {
+                        cout << "    " << metric.name << "  =  " << metric.formula << "\n";
+                        break;
+                    }
+                }
+            }
+            cout << "\n";
+        }
+    }
+    else
+    {
+        for (const auto& metric : metrics)
+            cout << "    " << metric.name << "  =  " << metric.formula << "\n";
+        cout << "\n";
+    }
+}
+
 static double resolveDelay(double delay, bool csv, bool hasExternalCmd, PCM* m)
 {
     m->setBlocked(hasExternalCmd && delay <= 0.0);
@@ -562,25 +621,6 @@ static bool printValidation(std::ostream& os, const std::string& metricsPath,
     return true;
 }
 
-static std::string findMetricsPath(const std::string& programPath, const std::string& platformDir)
-{
-    if (platformDir.empty()) return "";
-
-    const std::string relPath = "pmu-events/" + platformDir + "/metrics.json";
-
-    // 1. Next to the binary (post-build copy)
-    size_t lastSlash = programPath.find_last_of('/');
-    std::string binDir = (lastSlash != std::string::npos) ? programPath.substr(0, lastSlash) : ".";
-    std::string candidate = binDir + "/" + relPath;
-    if (std::ifstream(candidate).good()) return candidate;
-
-    // 2. Install path
-    candidate = getInstallPathPrefix() + relPath;
-    if (std::ifstream(candidate).good()) return candidate;
-
-    return "";
-}
-
 PCM_MAIN_NOTHROW;
 
 int mainThrows(int argc, char* argv[])
@@ -608,6 +648,7 @@ int mainThrows(int argc, char* argv[])
     bool csv = false;
     bool useLayout = true;
     bool validateOnly = false;
+    bool showHelp = false;
     std::string eventPrefix;
     std::string metricsPath;
     char* sysCmd = nullptr;
@@ -626,8 +667,8 @@ int mainThrows(int argc, char* argv[])
 
         if (check_argument_equals(*argv, {"--help", "-h", "/h"}))
         {
-            print_usage(program);
-            exit(EXIT_FAILURE);
+            showHelp = true;
+            continue;
         }
         else if (check_argument_equals(*argv, {"-silent", "/silent"}))
         {
@@ -698,7 +739,7 @@ int mainThrows(int argc, char* argv[])
 
     // Auto-detect platform
     std::string platformDir = MetricsDrivenPlatform::cpuModelToDir(m->getCPUFamilyModel());
-    if (platformDir.empty())
+    if (platformDir.empty() && !showHelp)
     {
         print_cpu_details();
         cerr << "ERROR: No metrics definition available for this CPU model.\n";
@@ -712,7 +753,7 @@ int mainThrows(int argc, char* argv[])
 
     if (metricsPath.empty()) metricsPath = findMetricsPath(program, platformDir);
 
-    if (metricsPath.empty())
+    if (metricsPath.empty() && !showHelp)
     {
         cerr << "ERROR: Could not find metrics.json for platform " << platformDir << "\n";
         cerr << "Use --metrics <path> to specify the file location.\n";
@@ -721,6 +762,13 @@ int mainThrows(int argc, char* argv[])
 
     cerr << "Metrics file: " << metricsPath << "\n";
     cerr << "Event prefix: " << eventPrefix << "\n";
+
+    if (showHelp)
+    {
+        print_usage(program);
+        print_available_metrics(metricsPath, platformDir);
+        exit(EXIT_SUCCESS);
+    }
 
     std::string cpuFamilyModel = m->getCPUFamilyModelString();
 
