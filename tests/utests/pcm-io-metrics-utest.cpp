@@ -504,3 +504,79 @@ TEST(ValidationTest, PrintValidatedMetrics)
     EXPECT_NE(output.find("UNC_CHA_TOR_INSERTS.IO_ITOMCACHENEAR"), std::string::npos);
     EXPECT_NE(output.find("1 of 3 metrics valid"), std::string::npos);
 }
+
+// --- Local Events Tests ---
+
+static const char* kLocalEventsJSON = R"json({
+    "events": [
+        {
+            "EventName": "MY_CUSTOM_EVENT.SUB",
+            "Unit": "CHA",
+            "EventCode": "0x99",
+            "UMask": "0x42",
+            "BriefDescription": "A custom event"
+        },
+        {
+            "EventName": "ANOTHER_EVENT.FOO",
+            "Unit": "IIO",
+            "EventCode": "0x10",
+            "UMask": "0x01"
+        }
+    ],
+    "metrics": [
+        {
+            "name": "Custom Metric",
+            "formula": "MY_CUSTOM_EVENT.SUB * 64",
+            "aggregation": "socket"
+        }
+    ]
+})json";
+
+TEST(LocalEventsTest, LocalEventsParsing)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(kLocalEventsJSON));
+
+    const auto& localEvents = config.getLocalEvents();
+    ASSERT_EQ(localEvents.size(), 2u);
+
+    EXPECT_EQ(localEvents[0].first, "MY_CUSTOM_EVENT.SUB");
+    EXPECT_EQ(localEvents[0].second.at("Unit"), "CHA");
+    EXPECT_EQ(localEvents[0].second.at("EventCode"), "0x99");
+    EXPECT_EQ(localEvents[0].second.at("UMask"), "0x42");
+    EXPECT_EQ(localEvents[0].second.at("BriefDescription"), "A custom event");
+    // EventName should NOT be in the fields map
+    EXPECT_EQ(localEvents[0].second.count("EventName"), 0u);
+
+    EXPECT_EQ(localEvents[1].first, "ANOTHER_EVENT.FOO");
+    EXPECT_EQ(localEvents[1].second.at("Unit"), "IIO");
+}
+
+TEST(LocalEventsTest, LocalEventsEmpty)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(kTestMetricsJSON));
+
+    const auto& localEvents = config.getLocalEvents();
+    EXPECT_TRUE(localEvents.empty());
+}
+
+TEST(LocalEventsTest, LocalEventsValidation)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(kLocalEventsJSON));
+
+    // Build a set of known events from local definitions
+    std::set<std::string> knownEvents;
+    for (const auto& [name, fields] : config.getLocalEvents())
+        knownEvents.insert(name);
+
+    auto result = config.validateEvents([&knownEvents](const std::string& event) {
+        return knownEvents.count(event) > 0;
+    });
+
+    // "Custom Metric" uses MY_CUSTOM_EVENT.SUB which is locally defined
+    EXPECT_TRUE(result.allValid());
+    ASSERT_EQ(result.metrics.size(), 1u);
+    EXPECT_TRUE(result.metrics[0].valid);
+}

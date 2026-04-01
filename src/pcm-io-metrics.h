@@ -17,6 +17,9 @@
 
 namespace pcm {
 
+// Forward-declared in event-resolver.h; redeclared here so pcm-io-metrics.h is self-contained
+using LocalEvent = std::unordered_map<std::string, std::string>;
+
 struct IOMetric {
     std::string name;
     std::string formula;
@@ -76,6 +79,7 @@ public:
 
     const std::vector<IOMetric>& getMetrics() const { return m_metrics; }
     const std::vector<LayoutSection>& getLayout() const { return m_layout; }
+    const std::vector<std::pair<std::string, LocalEvent>>& getLocalEvents() const { return m_localEvents; }
     std::set<std::string> extractEventNames() const;
     ValidationResult validateEvents(const EventValidator& validator) const;
     void printValidatedMetrics(std::ostream& os, const EventValidator& validator) const;
@@ -83,6 +87,7 @@ public:
 private:
     std::vector<IOMetric> m_metrics;
     std::vector<LayoutSection> m_layout;
+    std::vector<std::pair<std::string, LocalEvent>> m_localEvents;
     FormulaEvaluator m_evaluator;
 
     void generateFlatLayout();

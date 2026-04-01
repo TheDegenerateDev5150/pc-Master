@@ -115,6 +115,9 @@ bool MetricsDrivenPlatform::init(PCM* pcm, const std::string& metricsPath, const
         return false;
     }
 
+    // Register local events from metrics.json (takes priority over perfmon)
+    m_resolver.addLocalEvents(m_config.getLocalEvents());
+
     // Resolve all events referenced in metric formulas
     auto eventNames = m_config.extractEventNames();
     for (const auto& eventName : eventNames)
@@ -554,6 +557,7 @@ static bool printValidation(std::ostream& os, const std::string& metricsPath,
         cerr << "ERROR: Failed to initialize event resolver\n";
         return false;
     }
+    resolver.addLocalEvents(config.getLocalEvents());
     config.printValidatedMetrics(os, [&resolver](const std::string& event) { return resolver.isEvent(event); });
     return true;
 }

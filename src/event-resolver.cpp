@@ -23,6 +23,12 @@ const std::map<std::string, std::string> PerfmonEventResolver::s_pmuNameMap = {
     {"qpi ll", "xpi"}
 };
 
+void PerfmonEventResolver::addLocalEvents(const std::vector<std::pair<std::string, LocalEvent>>& events)
+{
+    for (const auto& [name, fields] : events)
+        m_localEvents[name] = fields;
+}
+
 #ifdef PCM_SIMDJSON_AVAILABLE
 
 static void lowerCase(std::string& str)
@@ -286,6 +292,8 @@ bool PerfmonEventResolver::loadPMUDeclarations(const std::string& cpuFamilyModel
 
 bool PerfmonEventResolver::isEvent(const std::string& eventName) const
 {
+    if (m_localEvents.find(eventName) != m_localEvents.end()) return true;
+
     if (m_eventMapJSON.find(eventName) != m_eventMapJSON.end()) return true;
 
     for (const auto& tsvMap : m_eventMapsTSV)
@@ -298,6 +306,10 @@ bool PerfmonEventResolver::isEvent(const std::string& eventName) const
 bool PerfmonEventResolver::isField(const std::string& eventName,
                                     const std::string& fieldName) const
 {
+    auto localIt = m_localEvents.find(eventName);
+    if (localIt != m_localEvents.end())
+        return localIt->second.find(fieldName) != localIt->second.end();
+
     auto jsonIt = m_eventMapJSON.find(eventName);
     if (jsonIt != m_eventMapJSON.end())
     {
@@ -326,6 +338,13 @@ bool PerfmonEventResolver::isField(const std::string& eventName,
 
 std::string PerfmonEventResolver::getField(const std::string& eventName, const std::string& fieldName) const
 {
+    auto localIt = m_localEvents.find(eventName);
+    if (localIt != m_localEvents.end())
+    {
+        auto fieldIt = localIt->second.find(fieldName);
+        return (fieldIt != localIt->second.end()) ? fieldIt->second : "";
+    }
+
     auto jsonIt = m_eventMapJSON.find(eventName);
     if (jsonIt != m_eventMapJSON.end())
     {
@@ -521,9 +540,30 @@ bool PerfmonEventResolver::init(const std::string&, const std::string&)
     return false;
 }
 
-bool PerfmonEventResolver::isEvent(const std::string&) const { return false; }
-bool PerfmonEventResolver::isField(const std::string&, const std::string&) const { return false; }
-std::string PerfmonEventResolver::getField(const std::string&, const std::string&) const { return ""; }
+bool PerfmonEventResolver::isEvent(const std::string& eventName) const
+{
+    return m_localEvents.find(eventName) != m_localEvents.end();
+}
+
+bool PerfmonEventResolver::isField(const std::string& eventName, const std::string& fieldName) const
+{
+    auto localIt = m_localEvents.find(eventName);
+    if (localIt != m_localEvents.end())
+        return localIt->second.find(fieldName) != localIt->second.end();
+    return false;
+}
+
+std::string PerfmonEventResolver::getField(const std::string& eventName, const std::string& fieldName) const
+{
+    auto localIt = m_localEvents.find(eventName);
+    if (localIt != m_localEvents.end())
+    {
+        auto fieldIt = localIt->second.find(fieldName);
+        return (fieldIt != localIt->second.end()) ? fieldIt->second : "";
+    }
+    return "";
+}
+
 std::string PerfmonEventResolver::mapPMUName(const std::string& unit) const { return unit; }
 std::vector<std::string> PerfmonEventResolver::getEventNames() const { return {}; }
 std::vector<std::pair<std::string, std::string>> PerfmonEventResolver::getEventFields(const std::string&) const { return {}; }

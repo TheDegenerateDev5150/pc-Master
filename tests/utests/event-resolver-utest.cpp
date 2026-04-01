@@ -376,3 +376,67 @@ TEST_F(EventResolverTest, AllICXTmaEventsFieldValues)
         }
     }
 }
+
+// --- Local Events Tests ---
+
+TEST_F(EventResolverTest, AddLocalEventsNewEvent)
+{
+    // Register a custom event not in perfmon
+    std::vector<std::pair<std::string, pcm::LocalEvent>> localEvents = {
+        {"MY_CUSTOM_EVENT.SUB", {{"Unit", "CHA"}, {"EventCode", "0x99"}, {"UMask", "0x42"}}}
+    };
+    resolver.addLocalEvents(localEvents);
+
+    EXPECT_TRUE(resolver.isEvent("MY_CUSTOM_EVENT.SUB"));
+    EXPECT_TRUE(resolver.isField("MY_CUSTOM_EVENT.SUB", "Unit"));
+    EXPECT_TRUE(resolver.isField("MY_CUSTOM_EVENT.SUB", "EventCode"));
+    EXPECT_TRUE(resolver.isField("MY_CUSTOM_EVENT.SUB", "UMask"));
+    EXPECT_FALSE(resolver.isField("MY_CUSTOM_EVENT.SUB", "NonExistent"));
+
+    EXPECT_EQ(resolver.getField("MY_CUSTOM_EVENT.SUB", "Unit"), "CHA");
+    EXPECT_EQ(resolver.getField("MY_CUSTOM_EVENT.SUB", "EventCode"), "0x99");
+    EXPECT_EQ(resolver.getField("MY_CUSTOM_EVENT.SUB", "UMask"), "0x42");
+    EXPECT_EQ(resolver.getField("MY_CUSTOM_EVENT.SUB", "NonExistent"), "");
+}
+
+TEST_F(EventResolverTest, AddLocalEventsOverridesPerfmon)
+{
+    // UNC_CHA_DIR_UPDATE.HA exists in perfmon with Unit=CHA, EventCode=0x54, UMask=0x01
+    ASSERT_TRUE(resolver.isEvent("UNC_CHA_DIR_UPDATE.HA"));
+    EXPECT_EQ(resolver.getField("UNC_CHA_DIR_UPDATE.HA", "Unit"), "CHA");
+
+    // Override with local definition
+    std::vector<std::pair<std::string, pcm::LocalEvent>> localEvents = {
+        {"UNC_CHA_DIR_UPDATE.HA", {{"Unit", "CUSTOM_UNIT"}, {"EventCode", "0xFF"}, {"UMask", "0xAA"}}}
+    };
+    resolver.addLocalEvents(localEvents);
+
+    // Local fields should win
+    EXPECT_TRUE(resolver.isEvent("UNC_CHA_DIR_UPDATE.HA"));
+    EXPECT_EQ(resolver.getField("UNC_CHA_DIR_UPDATE.HA", "Unit"), "CUSTOM_UNIT");
+    EXPECT_EQ(resolver.getField("UNC_CHA_DIR_UPDATE.HA", "EventCode"), "0xFF");
+    EXPECT_EQ(resolver.getField("UNC_CHA_DIR_UPDATE.HA", "UMask"), "0xAA");
+}
+
+TEST_F(EventResolverTest, AddLocalEventResolves)
+{
+    // Register a CHA event with known EventCode, UMask, and UMaskExt
+    // (UMaskExt is required by ICX CHA PMURegisterDeclarations with no DefaultValue)
+    std::vector<std::pair<std::string, pcm::LocalEvent>> localEvents = {
+        {"MY_LOCAL_CHA_EVENT.TEST", {{"Unit", "CHA"}, {"EventCode", "0x35"}, {"UMask", "0x04"}, {"UMaskExt", "0x00"}}}
+    };
+    resolver.addLocalEvents(localEvents);
+
+    std::string pmuName;
+    PCM::RawEventConfig config;
+    ASSERT_TRUE(resolver.resolveEvent("MY_LOCAL_CHA_EVENT.TEST", pmuName, config));
+    EXPECT_EQ(pmuName, "cha");
+
+    // EventCode in bits 0-7
+    uint64 eventCode = config.first[0] & 0xFF;
+    EXPECT_EQ(eventCode, 0x35u);
+
+    // UMask in bits 8-15
+    uint64 umask = (config.first[0] >> 8) & 0xFF;
+    EXPECT_EQ(umask, 0x04u);
+}

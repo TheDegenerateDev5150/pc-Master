@@ -15,10 +15,17 @@
 
 namespace pcm {
 
+// Field name → value map for a locally defined event
+using LocalEvent = std::unordered_map<std::string, std::string>;
+
 class PerfmonEventResolver {
 public:
     // Initialize from explicit CPU identification
     bool init(const std::string& cpuFamilyModel, const std::string& eventFilePrefix);
+
+    // Register local events (from metrics.json "events" array).
+    // Local events take priority over perfmon database events.
+    void addLocalEvents(const std::vector<std::pair<std::string, LocalEvent>>& events);
 
     // Query interface (for event validation)
     bool isEvent(const std::string& eventName) const;
@@ -58,6 +65,7 @@ private:
     bool m_initialized = false;
     std::string m_pmuDeclPath;
     static const std::map<std::string, std::string> s_pmuNameMap;
+    std::unordered_map<std::string, LocalEvent> m_localEvents;
 };
 
 } // namespace pcm

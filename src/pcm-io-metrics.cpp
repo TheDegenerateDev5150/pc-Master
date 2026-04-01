@@ -322,6 +322,34 @@ bool MetricsConfig::loadFromString(const std::string& jsonStr)
 
 bool MetricsConfig::parseMetrics(simdjson::dom::element doc)
 {
+    // Parse optional "events" array (local event definitions)
+    m_localEvents.clear();
+    auto eventsArr = doc["events"];
+    if (!eventsArr.error())
+    {
+        for (simdjson::dom::object eventObj : eventsArr)
+        {
+            std::string eventName;
+            LocalEvent fields;
+            for (const auto& kv : eventObj)
+            {
+                std::string key{kv.key.begin(), kv.key.end()};
+                std::string_view val;
+                std::string valStr;
+                if (!kv.value.get(val)) valStr = std::string(val);
+
+                if (key == "EventName")
+                    eventName = valStr;
+                else
+                    fields[key] = valStr;
+            }
+            if (!eventName.empty())
+            {
+                m_localEvents.emplace_back(eventName, std::move(fields));
+            }
+        }
+    }
+
     auto metricsArr = doc["metrics"];
     if (metricsArr.error())
     {
