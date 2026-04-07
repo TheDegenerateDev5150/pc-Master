@@ -154,7 +154,7 @@ bool tooManyEvents(const std::string & pmuName, const int event_pos, const std::
 using namespace simdjson;
 
 static pcm::PerfmonEventResolver s_resolver;
-std::string eventFileLocationPrefix = ".";
+std::string eventFileLocationPrefix;
 
 bool initPMUEventMap()
 {
@@ -2167,6 +2167,14 @@ int mainThrows(int argc, char * argv[])
 
 #ifdef PCM_SIMDJSON_AVAILABLE
     parseParam(argc, argv, "ep", [](const char* p) { eventFileLocationPrefix = p;});
+
+    if (eventFileLocationPrefix.empty())
+        eventFileLocationPrefix = PerfmonEventResolver::findPerfmonPath(program);
+
+    if (!eventFileLocationPrefix.empty() && !std::ifstream(eventFileLocationPrefix + "/mapfile.csv").good())
+    {
+        cerr << "WARNING: mapfile.csv not found in " << eventFileLocationPrefix << "\n";
+    }
 #endif
 
     if (argc > 1) do

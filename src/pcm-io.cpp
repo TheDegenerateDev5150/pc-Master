@@ -611,7 +611,7 @@ static bool printValidation(std::ostream& os, const std::string& metricsPath,
         return false;
     }
     PerfmonEventResolver resolver;
-    if (!resolver.init(cpuFamilyModel, eventPrefix))
+    if (!resolver.init(cpuFamilyModel, perfmonPath))
     {
         cerr << "ERROR: Failed to initialize event resolver\n";
         return false;
