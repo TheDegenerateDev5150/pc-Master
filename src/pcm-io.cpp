@@ -602,7 +602,7 @@ static double resolveDelay(double delay, bool csv, bool hasExternalCmd, PCM* m)
 }
 
 static bool printValidation(std::ostream& os, const std::string& metricsPath,
-                            const std::string& cpuFamilyModel, const std::string& eventPrefix)
+                            const std::string& cpuFamilyModel, const std::string& perfmonPath)
 {
     MetricsConfig config;
     if (!config.load(metricsPath))
@@ -649,7 +649,7 @@ int mainThrows(int argc, char* argv[])
     bool useLayout = true;
     bool validateOnly = false;
     bool showHelp = false;
-    std::string eventPrefix;
+    std::string perfmonPath;
     std::string metricsPath;
     char* sysCmd = nullptr;
     char** sysArgv = nullptr;
@@ -708,7 +708,7 @@ int mainThrows(int argc, char* argv[])
                 cerr << "ERROR: no parameter provided for option --ep\n";
                 exit(EXIT_FAILURE);
             }
-            eventPrefix = *argv;
+            perfmonPath = *argv;
             continue;
         }
         else if (check_argument_equals(*argv, {"--metrics"}))
@@ -747,9 +747,19 @@ int mainThrows(int argc, char* argv[])
         exit(EXIT_FAILURE);
     }
 
-    // Auto-detect paths if not specified
-    // Event prefix default: "." — the resolver also checks getInstallPathPrefix()
-    if (eventPrefix.empty()) eventPrefix = ".";
+    if (perfmonPath.empty()) perfmonPath = PerfmonEventResolver::findPerfmonPath(program);
+
+    if (perfmonPath.empty() && !showHelp)
+    {
+        cerr << "ERROR: Could not find perfmon directory (mapfile.csv not found).\n";
+        cerr << "Use --ep <path> to specify the perfmon directory location.\n";
+        exit(EXIT_FAILURE);
+    }
+
+    if (!perfmonPath.empty() && !std::ifstream(perfmonPath + "/mapfile.csv").good())
+    {
+        cerr << "WARNING: mapfile.csv not found in " << perfmonPath << "\n";
+    }
 
     if (metricsPath.empty()) metricsPath = findMetricsPath(program, platformDir);
 
@@ -760,8 +770,8 @@ int mainThrows(int argc, char* argv[])
         exit(EXIT_FAILURE);
     }
 
-    cerr << "Metrics file: " << metricsPath << "\n";
-    cerr << "Event prefix: " << eventPrefix << "\n";
+    cout << "Metrics file: " << metricsPath << "\n";
+    cout << "Perfmon event path: " << perfmonPath << "\n";
 
     if (showHelp)
     {
@@ -775,15 +785,15 @@ int mainThrows(int argc, char* argv[])
     if (validateOnly)
     {
         cerr << "\nMetrics validation for " << platformDir << ":\n\n";
-        exit(printValidation(cout, metricsPath, cpuFamilyModel, eventPrefix) ? EXIT_SUCCESS : EXIT_FAILURE);
+        exit(printValidation(cout, metricsPath, cpuFamilyModel, perfmonPath) ? EXIT_SUCCESS : EXIT_FAILURE);
     }
 
     // Initialize platform
     MetricsDrivenPlatform platform;
-    if (!platform.init(m, metricsPath, eventPrefix))
+    if (!platform.init(m, metricsPath, perfmonPath))
     {
         cerr << "ERROR: Platform initialization failed\n\nMetrics validation:\n\n";
-        printValidation(cerr, metricsPath, cpuFamilyModel, eventPrefix);
+        printValidation(cerr, metricsPath, cpuFamilyModel, perfmonPath);
         exit(EXIT_FAILURE);
     }
 

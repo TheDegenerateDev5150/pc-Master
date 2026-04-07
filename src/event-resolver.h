@@ -20,7 +20,13 @@ using LocalEvent = std::unordered_map<std::string, std::string>;
 
 class PerfmonEventResolver {
 public:
-    // Initialize from explicit CPU identification
+    // Search for the perfmon directory containing mapfile.csv.
+    // Checks: next to programPath binary, then install prefix.
+    // Returns empty string if not found.
+    static std::string findPerfmonPath(const std::string& programPath);
+
+    // Initialize from explicit CPU identification.
+    // eventFilePrefix must point to a directory containing mapfile.csv and PMURegisterDeclarations/.
     bool init(const std::string& cpuFamilyModel, const std::string& eventFilePrefix);
 
     // Register local events (from metrics.json "events" array).

@@ -13,6 +13,23 @@
 
 namespace pcm {
 
+std::string PerfmonEventResolver::findPerfmonPath(const std::string& programPath)
+{
+    const std::string marker = "mapfile.csv";
+
+    // 1. Next to the binary (build output: bin/perfmon/)
+    size_t lastSlash = programPath.find_last_of('/');
+    std::string binDir = (lastSlash != std::string::npos) ? programPath.substr(0, lastSlash) : ".";
+    std::string candidate = binDir + "/perfmon";
+    if (std::ifstream(candidate + "/" + marker).good()) return candidate;
+
+    // 2. Install path
+    candidate = getInstallPathPrefix() + "perfmon";
+    if (std::ifstream(candidate + "/" + marker).good()) return candidate;
+
+    return "";
+}
+
 const std::map<std::string, std::string> PerfmonEventResolver::s_pmuNameMap = {
     {"cbo",    "cha"},
     {"b2cmi",  "m2m"},
@@ -105,23 +122,14 @@ bool PerfmonEventResolver::parseTSV(const std::string& path)
 bool PerfmonEventResolver::loadPerfmonEvents(const std::string& cpuFamilyModel, const std::string& prefix)
 {
     const std::string mapfilePath = prefix + "/mapfile.csv";
-    const std::string mapfilePathAlt = getInstallPathPrefix() + "perfmon/mapfile.csv";
 
     std::ifstream in(mapfilePath);
     if (!in.is_open())
     {
-        in.open(mapfilePathAlt);
-        if (!in.is_open())
-        {
-            std::cerr << "ERROR: File " << mapfilePath << " or " << mapfilePathAlt << " can't be opened.\n";
-#ifndef _MSC_VER
-            std::cerr << "       run 'make install' in the pcm build directory if you cloned PCM source repository recursively with submodules, or\n";
-#endif
-            std::cerr << "       use -ep <pcm_source_directory>/perfmon option if you cloned PCM source repository recursively with submodules,\n";
-            std::cerr << "       or run 'git clone https://github.com/intel/perfmon' to download the perfmon event repository and use -ep <perfmon_directory> option\n";
-            std::cerr << "       or download the file from https://raw.githubusercontent.com/intel/perfmon/main/mapfile.csv\n";
-            return false;
-        }
+        std::cerr << "ERROR: File " << mapfilePath << " can't be opened.\n";
+        std::cerr << "       use --ep <perfmon_directory> option to specify the perfmon directory,\n";
+        std::cerr << "       or run 'git clone https://github.com/intel/perfmon' to download the perfmon event repository\n";
+        return false;
     }
 
     std::string line;
@@ -182,18 +190,15 @@ bool PerfmonEventResolver::loadPerfmonEvents(const std::string& cpuFamilyModel, 
 
         const std::string path1 = prefix + evfile.second;
         const std::string path2 = prefix + evfile.second.substr(evfile.second.rfind('/'));
-        const std::string path3 = getInstallPathPrefix() + "perfmon" + evfile.second;
 
         std::string path;
         if (std::ifstream(path1).good())
             path = path1;
         else if (std::ifstream(path2).good())
             path = path2;
-        else if (std::ifstream(path3).good())
-            path = path3;
         else
         {
-            std::cerr << "ERROR: Can't open event file at " << path1 << " or " << path2 << " or " << path3 << "\n";
+            std::cerr << "ERROR: Can't open event file at " << path1 << " or " << path2 << "\n";
             std::cerr << "Make sure you have downloaded " << evfile.second
                       << " from https://raw.githubusercontent.com/intel/perfmon/main"
                       << evfile.second << "\n";
@@ -236,32 +241,18 @@ bool PerfmonEventResolver::loadPMUDeclarations(const std::string& cpuFamilyModel
     std::string path;
     std::string errMsg;
 
+    // PMURegisterDeclarations is a sibling of the perfmon directory, not inside it.
+    size_t lastSlash = prefix.find_last_of('/');
+    std::string baseDir = (lastSlash != std::string::npos) ? prefix.substr(0, lastSlash) : ".";
+
     for (int s = stepping; s >= 0; --s)
     {
-        std::string declPath = "PMURegisterDeclarations/" + cpuFamilyModel + "-" + std::to_string(s) + ".json";
+        std::string declPath = baseDir + "/PMURegisterDeclarations/" + cpuFamilyModel + "-" + std::to_string(s) + ".json";
 
         std::ifstream in(declPath);
         if (in.is_open())
         {
             path = declPath;
-            in.close();
-            break;
-        }
-
-        const std::string altPath = prefix + "/" + declPath;
-        in.open(altPath);
-        if (in.is_open())
-        {
-            path = altPath;
-            in.close();
-            break;
-        }
-
-        const std::string installPath = getInstallPathPrefix() + declPath;
-        in.open(installPath);
-        if (in.is_open())
-        {
-            path = installPath;
             in.close();
             break;
         }
