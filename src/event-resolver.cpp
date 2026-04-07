@@ -241,21 +241,36 @@ bool PerfmonEventResolver::loadPMUDeclarations(const std::string& cpuFamilyModel
     std::string path;
     std::string errMsg;
 
-    // PMURegisterDeclarations is a sibling of the perfmon directory, not inside it.
-    size_t lastSlash = prefix.find_last_of('/');
-    std::string baseDir = (lastSlash != std::string::npos) ? prefix.substr(0, lastSlash) : ".";
+    // Normalize: strip trailing slashes so find_last_of correctly finds the parent separator
+    std::string normalizedPrefix = prefix;
+    while (!normalizedPrefix.empty() && normalizedPrefix.back() == '/')
+        normalizedPrefix.pop_back();
+
+    size_t lastSlash = normalizedPrefix.find_last_of('/');
+    std::string baseDir = (lastSlash != std::string::npos) ? normalizedPrefix.substr(0, lastSlash) : ".";
 
     for (int s = stepping; s >= 0; --s)
     {
-        std::string declPath = baseDir + "/PMURegisterDeclarations/" + cpuFamilyModel + "-" + std::to_string(s) + ".json";
+        const std::string relPath = "PMURegisterDeclarations/" + cpuFamilyModel + "-" + std::to_string(s) + ".json";
 
-        std::ifstream in(declPath);
-        if (in.is_open())
+        const std::string candidates[] = {
+            baseDir + "/" + relPath,              // sibling of perfmon dir (build output / install)
+            normalizedPrefix + "/" + relPath,     // inside the provided prefix
+            relPath,                              // relative to CWD
+            getInstallPathPrefix() + relPath,     // system install path
+        };
+
+        for (const auto& declPath : candidates)
         {
-            path = declPath;
-            in.close();
-            break;
+            std::ifstream in(declPath);
+            if (in.is_open())
+            {
+                path = declPath;
+                in.close();
+                break;
+            }
         }
+        if (!path.empty()) break;
 
         errMsg = "PMURegisterDeclarations file not found for " + cpuFamilyModel + " stepping " + std::to_string(s);
     }
