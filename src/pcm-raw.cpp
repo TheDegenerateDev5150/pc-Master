@@ -169,7 +169,7 @@ void print_event_description(const std::string& eventStr)
     {
         std::string val = s_resolver.getField(eventStr, key);
 
-        if (!val.empty()) std::cout << key << " : " << val << "\n";
+        if (!val.empty()) std::cout << key << " : " << std::quoted(val) << "\n";
     }
 }
 
