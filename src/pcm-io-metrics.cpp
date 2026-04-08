@@ -209,8 +209,33 @@ void TableRenderer::render(std::ostream& os) const
     // innerWidth = tableWidth minus the 2 outer border chars (in display columns)
     size_t innerWidth = tableWidth - 2;
 
-    // Top border
-    renderLine(os, BOX.top_left, BOX.tee_down, BOX.top_right, colWidths);
+    // If first row is a section header, render it above the column headers
+    bool titleAtTop = !m_rows.empty() && m_rows[0].isSectionHeader;
+    size_t firstDataRow = titleAtTop ? 1 : 0;
+
+    if (titleAtTop)
+    {
+        // Full-width top border (no column dividers)
+        os << BOX.top_left;
+        for (size_t j = 0; j < innerWidth; ++j)
+            os << BOX.horizontal;
+        os << BOX.top_right << "\n";
+
+        // Section title row
+        os << BOX.vertical << " " << m_rows[0].sectionTitle;
+        size_t pad = innerWidth - 1 - m_rows[0].sectionTitle.size();
+        for (size_t j = 0; j < pad; ++j)
+            os << " ";
+        os << BOX.vertical << "\n";
+
+        // Columned separator before column headers
+        renderLine(os, BOX.tee_right, BOX.tee_down, BOX.tee_left, colWidths);
+    }
+    else
+    {
+        // Top border with column dividers
+        renderLine(os, BOX.top_left, BOX.tee_down, BOX.top_right, colWidths);
+    }
 
     // Header row (left-aligned)
     os << BOX.vertical;
@@ -224,15 +249,15 @@ void TableRenderer::render(std::ostream& os) const
     }
     os << "\n";
 
-    if (m_rows.empty())
+    if (m_rows.size() <= firstDataRow)
     {
-        // No data: close immediately
+        // No data rows: close immediately
         renderLine(os, BOX.bottom_left, BOX.tee_up, BOX.bottom_right, colWidths);
         return;
     }
 
     bool needDataSeparator = true;
-    for (size_t ri = 0; ri < m_rows.size(); ++ri)
+    for (size_t ri = firstDataRow; ri < m_rows.size(); ++ri)
     {
         const auto& row = m_rows[ri];
         if (row.isSectionHeader)
