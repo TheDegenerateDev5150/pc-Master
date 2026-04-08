@@ -53,9 +53,10 @@ private:
     MetricsConfig m_config;
     MetricsDisplay m_display;
     PerfmonEventResolver m_resolver;
-    PCM::RawPMUConfigs m_pmuConfigs;
+    std::vector<PCM::RawPMUConfigs> m_pmuConfigGroups;
 
     struct EventLocation {
+        size_t groupIndex;
         std::string pmuName;
         size_t counterIndex;
     };
@@ -72,8 +73,8 @@ private:
     std::unordered_map<std::string, PMUCounterDesc> m_pmuCounterDescs;
     void initPMUCounterDescs();
 
-    std::vector<ServerUncoreCounterState> m_beforeState;
-    std::vector<ServerUncoreCounterState> m_afterState;
+    std::vector<std::vector<ServerUncoreCounterState>> m_groupBeforeStates; // [group][socket]
+    std::vector<std::vector<ServerUncoreCounterState>> m_groupAfterStates;  // [group][socket]
     std::vector<std::unordered_map<std::string, double>> m_counterValues;
 
     void readCounterValues();
@@ -118,7 +119,8 @@ bool MetricsDrivenPlatform::init(PCM* pcm, const std::string& metricsPath, const
     // Register local events from metrics.json (takes priority over perfmon)
     m_resolver.addLocalEvents(m_config.getLocalEvents());
 
-    // Resolve all events referenced in metric formulas
+    // Resolve all events referenced in metric formulas, batching into groups of
+    // up to ServerUncoreCounterState::maxCounters events per PMU type.
     auto eventNames = m_config.extractEventNames();
     for (const auto& eventName : eventNames)
     {
@@ -133,9 +135,24 @@ bool MetricsDrivenPlatform::init(PCM* pcm, const std::string& metricsPath, const
             continue;
         }
 
-        size_t idx = m_pmuConfigs[pmuName].programmable.size();
-        m_pmuConfigs[pmuName].programmable.push_back(config);
-        m_eventLocations[eventName] = {pmuName, idx};
+        // Find first group that still has room for this PMU type
+        size_t groupIdx = m_pmuConfigGroups.size();  // default: start a new group
+        for (size_t g = 0; g < m_pmuConfigGroups.size(); ++g)
+        {
+            const auto& existing = m_pmuConfigGroups[g][pmuName].programmable;
+            if (isRegisterEvent(pmuName) || existing.size() < ServerUncoreCounterState::maxCounters)
+            {
+                groupIdx = g;
+                break;
+            }
+        }
+        if (groupIdx == m_pmuConfigGroups.size())
+            m_pmuConfigGroups.emplace_back();
+
+        auto& grp = m_pmuConfigGroups[groupIdx];
+        size_t idx = grp[pmuName].programmable.size();
+        grp[pmuName].programmable.push_back(config);
+        m_eventLocations[eventName] = {groupIdx, pmuName, idx};
     }
 
     if (m_eventLocations.empty())
@@ -144,47 +161,54 @@ bool MetricsDrivenPlatform::init(PCM* pcm, const std::string& metricsPath, const
         return false;
     }
 
-    // Program PMUs
-    PCM::ErrorCode status = pcm->program(m_pmuConfigs, true);
-    if (status != PCM::Success)
+    // Allocate counter state vectors (programming happens in collect())
+    m_numSockets = pcm->getNumSockets();
+    m_counterValues.resize(m_numSockets);
+
+    const size_t numGroups = m_pmuConfigGroups.size();
+    m_groupBeforeStates.resize(numGroups);
+    m_groupAfterStates.resize(numGroups);
+    for (size_t g = 0; g < numGroups; ++g)
     {
-        pcm->checkError(status);
-        return false;
+        m_groupBeforeStates[g].resize(m_numSockets);
+        m_groupAfterStates[g].resize(m_numSockets);
     }
 
-    // Allocate counter state vectors
-    m_numSockets = pcm->getNumSockets();
-    m_beforeState.resize(m_numSockets);
-    m_afterState.resize(m_numSockets);
-    m_counterValues.resize(m_numSockets);
+    if (numGroups > 1)
+        cerr << "INFO: Events split into " << numGroups << " measurement groups\n";
 
     m_display.init(&m_config, m_numSockets);
     initPMUCounterDescs();
-
-    // Read initial "before" state right after programming
-    m_pcm->globalFreezeUncoreCounters();
-    for (uint32 s = 0; s < m_numSockets; ++s)
-        m_beforeState[s] = m_pcm->getServerUncoreCounterState(s);
-    m_pcm->globalUnfreezeUncoreCounters();
 
     return true;
 }
 
 void MetricsDrivenPlatform::collect(int delayMs)
 {
-    MySleepMs(delayMs);
+    for (size_t g = 0; g < m_pmuConfigGroups.size(); ++g)
+    {
+        PCM::ErrorCode status = m_pcm->program(m_pmuConfigGroups[g], true);
+        if (status != PCM::Success)
+        {
+            m_pcm->checkError(status);
+            return;
+        }
 
-    // Read after state
-    m_pcm->globalFreezeUncoreCounters();
-    for (uint32 s = 0; s < m_numSockets; ++s)
-        m_afterState[s] = m_pcm->getServerUncoreCounterState(s);
-    m_pcm->globalUnfreezeUncoreCounters();
+        m_pcm->globalFreezeUncoreCounters();
+        for (uint32 s = 0; s < m_numSockets; ++s)
+            m_groupBeforeStates[g][s] = m_pcm->getServerUncoreCounterState(s);
+        m_pcm->globalUnfreezeUncoreCounters();
+
+        MySleepMs(delayMs);
+
+        m_pcm->globalFreezeUncoreCounters();
+        for (uint32 s = 0; s < m_numSockets; ++s)
+            m_groupAfterStates[g][s] = m_pcm->getServerUncoreCounterState(s);
+        m_pcm->globalUnfreezeUncoreCounters();
+    }
 
     readCounterValues();
     m_display.setCounterValues(&m_counterValues);
-
-    // After becomes before for next iteration
-    std::swap(m_beforeState, m_afterState);
 }
 
 void MetricsDrivenPlatform::initPMUCounterDescs()
@@ -256,7 +280,8 @@ void MetricsDrivenPlatform::readCounterValues()
             for (size_t u = 0; u < numUnits; ++u)
             {
                 sum += static_cast<double>(desc.getter((uint32)u, (uint32)loc.counterIndex,
-                                           m_beforeState[s], m_afterState[s]));
+                                           m_groupBeforeStates[loc.groupIndex][s],
+                                           m_groupAfterStates[loc.groupIndex][s]));
             }
             m_counterValues[s][eventName] = sum;
         }
