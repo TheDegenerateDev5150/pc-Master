@@ -503,12 +503,45 @@ void MetricsConfig::parseLayout(simdjson::dom::element doc)
                 section.title = std::string{title.get_c_str()};
             }
 
-            auto metricsArr = sectionObj["metrics"];
-            if (!metricsArr.error())
+            auto rowsEl = sectionObj["rows"];
+            if (!rowsEl.error())
             {
-                for (auto metricName : metricsArr.get_array())
+                // Multi-row section: parse rowLabels, columns, system-wide-metrics
+                for (auto rowLabel : rowsEl.get_array())
+                    section.rowLabels.emplace_back(rowLabel.get_c_str());
+
+                auto columnsEl = sectionObj["columns"];
+                if (!columnsEl.error())
                 {
-                    section.metrics.emplace_back(metricName.get_c_str());
+                    simdjson::dom::object colsObj;
+                    if (!columnsEl.get(colsObj))
+                    {
+                        for (const auto& kv : colsObj)
+                        {
+                            std::string colHeader{kv.key.begin(), kv.key.end()};
+                            std::vector<std::string> colMetrics;
+                            for (auto metricName : kv.value.get_array())
+                                colMetrics.emplace_back(metricName.get_c_str());
+                            section.columns.emplace_back(std::move(colHeader), std::move(colMetrics));
+                        }
+                    }
+                }
+
+                auto sysEl = sectionObj["system-wide-metrics"];
+                if (!sysEl.error())
+                {
+                    for (auto m : sysEl.get_array())
+                        section.systemWideMetrics.emplace_back(m.get_c_str());
+                }
+            }
+            else
+            {
+                // Flat section: parse metrics list
+                auto metricsArr = sectionObj["metrics"];
+                if (!metricsArr.error())
+                {
+                    for (auto metricName : metricsArr.get_array())
+                        section.metrics.emplace_back(metricName.get_c_str());
                 }
             }
             m_layout.emplace_back(std::move(section));

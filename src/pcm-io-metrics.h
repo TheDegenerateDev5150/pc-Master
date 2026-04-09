@@ -29,7 +29,16 @@ struct IOMetric {
 
 struct LayoutSection {
     std::string title;
-    std::vector<std::string> metrics;  // references IOMetric::name
+    std::vector<std::string> metrics;  // references IOMetric::name (flat scheme)
+
+    // Multi-row scheme — all empty => flat section
+    std::vector<std::string> rowLabels;  // e.g. {"Total", "Miss", "Hit"}
+    // Ordered pairs: (column-group-header, [metric-name-per-row]).
+    // std::vector preserves JSON insertion order (simdjson dom::object is ordered).
+    std::vector<std::pair<std::string, std::vector<std::string>>> columns;
+    std::vector<std::string> systemWideMetrics;  // metric names for the system section
+
+    bool isMultiRow() const { return !rowLabels.empty(); }
 };
 
 using EventValidator = std::function<bool(const std::string&)>;

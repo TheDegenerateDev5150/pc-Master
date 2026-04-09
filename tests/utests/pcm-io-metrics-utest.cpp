@@ -598,3 +598,208 @@ TEST(LocalEventsTest, LocalEventsValidation)
     ASSERT_EQ(result.metrics.size(), 1u);
     EXPECT_TRUE(result.metrics[0].valid);
 }
+
+// --- Multi-Row Layout Tests ---
+
+static const char* kMultiRowJSON = R"json({
+    "metrics": [
+        {"name":"PCIRdCur",       "formula":"A", "aggregation":"socket"},
+        {"name":"PCIRdCur Miss",  "formula":"B", "aggregation":"socket"},
+        {"name":"PCIRdCur Hit",   "formula":"C", "aggregation":"socket"},
+        {"name":"ItoM",           "formula":"D", "aggregation":"socket"},
+        {"name":"Total Read (B)", "formula":"A+B","aggregation":"system"}
+    ],
+    "layout": {
+        "sections": [
+            {
+                "title": "PCIe Data",
+                "rows": ["Total", "Miss", "Hit"],
+                "columns": {
+                    "PCIRdCur Events": ["PCIRdCur", "PCIRdCur Miss", "PCIRdCur Hit"],
+                    "ItoM Events": ["ItoM"]
+                },
+                "system-wide-metrics": ["Total Read (B)"]
+            }
+        ]
+    }
+})json";
+
+TEST(MultiRowLayoutTest, ParsesRowLabels)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(kMultiRowJSON));
+    const auto& layout = config.getLayout();
+    ASSERT_EQ(layout.size(), 1u);
+    EXPECT_TRUE(layout[0].isMultiRow());
+    ASSERT_EQ(layout[0].rowLabels.size(), 3u);
+    EXPECT_EQ(layout[0].rowLabels[0], "Total");
+    EXPECT_EQ(layout[0].rowLabels[1], "Miss");
+    EXPECT_EQ(layout[0].rowLabels[2], "Hit");
+}
+
+TEST(MultiRowLayoutTest, ParsesColumns)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(kMultiRowJSON));
+    const auto& layout = config.getLayout();
+    ASSERT_EQ(layout[0].columns.size(), 2u);
+    // Column order preserved
+    EXPECT_EQ(layout[0].columns[0].first, "PCIRdCur Events");
+    ASSERT_EQ(layout[0].columns[0].second.size(), 3u);
+    EXPECT_EQ(layout[0].columns[0].second[0], "PCIRdCur");
+    EXPECT_EQ(layout[0].columns[0].second[1], "PCIRdCur Miss");
+    EXPECT_EQ(layout[0].columns[0].second[2], "PCIRdCur Hit");
+    EXPECT_EQ(layout[0].columns[1].first, "ItoM Events");
+    ASSERT_EQ(layout[0].columns[1].second.size(), 1u);
+    EXPECT_EQ(layout[0].columns[1].second[0], "ItoM");
+}
+
+TEST(MultiRowLayoutTest, ParsesSystemWideMetrics)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(kMultiRowJSON));
+    const auto& layout = config.getLayout();
+    ASSERT_EQ(layout[0].systemWideMetrics.size(), 1u);
+    EXPECT_EQ(layout[0].systemWideMetrics[0], "Total Read (B)");
+}
+
+TEST(MultiRowLayoutTest, ParsesTitle)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(kMultiRowJSON));
+    EXPECT_EQ(config.getLayout()[0].title, "PCIe Data");
+    // Flat-metrics list should be empty for a multi-row section
+    EXPECT_TRUE(config.getLayout()[0].metrics.empty());
+}
+
+TEST(MultiRowLayoutTest, FlatSectionIsNotMultiRow)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(kLayoutMetricsJSON));
+    const auto& layout = config.getLayout();
+    ASSERT_GE(layout.size(), 1u);
+    EXPECT_FALSE(layout[0].isMultiRow());
+    EXPECT_FALSE(layout[0].metrics.empty());
+}
+
+TEST(MultiRowLayoutTest, MixedLayout)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(R"json({
+        "metrics": [
+            {"name":"A","formula":"x","aggregation":"socket"},
+            {"name":"B","formula":"y","aggregation":"socket"},
+            {"name":"C","formula":"z","aggregation":"socket"}
+        ],
+        "layout": {
+            "sections": [
+                {
+                    "title": "Multi",
+                    "rows": ["Row1", "Row2"],
+                    "columns": {
+                        "Col Group": ["A", "B"]
+                    }
+                },
+                {
+                    "title": "Flat",
+                    "metrics": ["C"]
+                }
+            ]
+        }
+    })json"));
+    const auto& layout = config.getLayout();
+    ASSERT_EQ(layout.size(), 2u);
+    EXPECT_TRUE(layout[0].isMultiRow());
+    EXPECT_EQ(layout[0].title, "Multi");
+    EXPECT_FALSE(layout[1].isMultiRow());
+    EXPECT_EQ(layout[1].title, "Flat");
+    ASSERT_EQ(layout[1].metrics.size(), 1u);
+    EXPECT_EQ(layout[1].metrics[0], "C");
+}
+
+// --- Multi-Row Rendering Tests (via TableRenderer directly) ---
+
+class MultiRowRenderTest : public ::testing::Test {
+protected:
+    TableRenderer renderer;
+};
+
+TEST_F(MultiRowRenderTest, ColumnCountMatchesHeaders)
+{
+    // Simulate 2 sockets x 3 sub-rows with 2 column groups
+    renderer.setHeaders({"Skt", "", "ColA", "ColB"});
+    renderer.addSectionHeader("Section Title");
+    // Socket 0
+    renderer.addRow({"0", "Total", "100", "200"});
+    renderer.addRow({"", "Miss",  "30",  "50"});
+    renderer.addRow({"", "Hit",   "70",  "150"});
+    // Socket 1
+    renderer.addRow({"1", "Total", "110", "210"});
+    renderer.addRow({"", "Miss",  "35",  "55"});
+    renderer.addRow({"", "Hit",   "75",  "155"});
+
+    std::string result = renderer.renderToString();
+    EXPECT_NE(result.find("Section Title"), std::string::npos);
+    EXPECT_NE(result.find("ColA"), std::string::npos);
+    EXPECT_NE(result.find("ColB"), std::string::npos);
+    EXPECT_NE(result.find("Total"), std::string::npos);
+    EXPECT_NE(result.find("Miss"), std::string::npos);
+    EXPECT_NE(result.find("Hit"), std::string::npos);
+    EXPECT_NE(result.find("100"), std::string::npos);
+    EXPECT_NE(result.find("200"), std::string::npos);
+}
+
+TEST_F(MultiRowRenderTest, EmptyCellForShortColumn)
+{
+    // "Short Col" has only 1 metric mapped to row 0; rows 1 and 2 get empty cells
+    renderer.setHeaders({"Skt", "", "Full Col", "Short Col"});
+    renderer.addRow({"0", "Total", "1000", "500"});
+    renderer.addRow({"",  "Miss",  "200",  ""});    // empty for Short Col
+    renderer.addRow({"",  "Hit",   "800",  ""});    // empty for Short Col
+
+    std::string result = renderer.renderToString();
+    EXPECT_NE(result.find("1000"), std::string::npos);
+    EXPECT_NE(result.find("500"), std::string::npos);
+    EXPECT_NE(result.find("200"), std::string::npos);
+    EXPECT_NE(result.find("800"), std::string::npos);
+    EXPECT_GT(result.size(), 0u);
+}
+
+TEST_F(MultiRowRenderTest, SocketNumberOnlyInFirstSubRow)
+{
+    renderer.setHeaders({"Skt", "", "Val"});
+    renderer.addRow({"0", "Total", "100"});
+    renderer.addRow({"",  "Miss",  "30"});
+    renderer.addRow({"",  "Hit",   "70"});
+
+    std::string result = renderer.renderToString();
+    // The socket number "0" should appear right-aligned in the Skt cell exactly once.
+    // Skt column width = max(len("Skt")=3, len("0")=1, len("")=0) + 2 = 5.
+    // Right-aligned "0" in a 5-wide cell: "   0 " bordered by the vertical box char.
+    std::string pattern = std::string(B_V) + "   0 " + B_V;
+    size_t count = 0;
+    size_t pos = 0;
+    while ((pos = result.find(pattern, pos)) != std::string::npos) {
+        ++count;
+        ++pos;
+    }
+    EXPECT_EQ(count, 1u) << "Socket number '0' should appear in exactly one row\n" << result;
+}
+
+TEST_F(MultiRowRenderTest, SystemSectionAfterMultiRows)
+{
+    renderer.setHeaders({"Skt", "", "Events"});
+    renderer.addSectionHeader("PCIe Data");
+    renderer.addRow({"0", "Total", "1000"});
+    renderer.addRow({"",  "Miss",  "200"});
+    renderer.addRow({"",  "Hit",   "800"});
+    renderer.addSystemSection("System Wide", {{"TotRd", "1000"}, {"TotWr", "500"}});
+
+    std::string result = renderer.renderToString();
+    EXPECT_NE(result.find("PCIe Data"), std::string::npos);
+    EXPECT_NE(result.find("System Wide"), std::string::npos);
+    EXPECT_NE(result.find("TotRd"), std::string::npos);
+    EXPECT_NE(result.find("TotWr"), std::string::npos);
+    EXPECT_NE(result.find("1000"), std::string::npos);
+    EXPECT_NE(result.find("500"), std::string::npos);
+}

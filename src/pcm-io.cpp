@@ -32,8 +32,10 @@ private:
     const std::vector<std::unordered_map<std::string, double>>* m_counterValues = nullptr;
 
     void displayLayoutMode(std::ostream& os) const;
+    void displayMultiRowSection(std::ostream& os, const LayoutSection& section) const;
     void displayFlatMode(std::ostream& os) const;
     void displayCsv(std::ostream& os) const;
+    bool hasLayoutSections() const;
     std::unordered_map<std::string, double> getSystemCounterValues() const;
     static std::string formatValue(double value);
     static std::string metricDisplayName(const IOMetric& metric);
@@ -341,11 +343,20 @@ void MetricsDisplay::printHeader(std::ostream& os, bool csv) const
     os << "\n";
 }
 
+bool MetricsDisplay::hasLayoutSections() const
+{
+    const auto& layout = m_config->getLayout();
+    if (layout.size() > 1) return true;
+    for (const auto& s : layout)
+        if (s.isMultiRow()) return true;
+    return false;
+}
+
 void MetricsDisplay::display(std::ostream& os, bool csv, bool useLayout) const
 {
     if (csv)
         displayCsv(os);
-    else if (useLayout && m_config->getLayout().size() > 1)
+    else if (useLayout && hasLayoutSections())
         displayLayoutMode(os);
     else
         displayFlatMode(os);
@@ -388,11 +399,17 @@ void MetricsDisplay::displayCsv(std::ostream& os) const
 
 void MetricsDisplay::displayLayoutMode(std::ostream& os) const
 {
-    FormulaEvaluator evaluator;
-    const auto& metrics = m_config->getMetrics();
-
     for (const auto& section : m_config->getLayout())
     {
+        if (section.isMultiRow())
+        {
+            displayMultiRowSection(os, section);
+            continue;
+        }
+
+        // Flat section rendering
+        FormulaEvaluator evaluator;
+        const auto& metrics = m_config->getMetrics();
         std::vector<std::string> headers;
         std::vector<size_t> metricIdxs;
         std::vector<size_t> sysMetricIdxs;
@@ -466,6 +483,85 @@ void MetricsDisplay::displayLayoutMode(std::ostream& os) const
         table.render(os);
         os << "\n";
     }
+}
+
+void MetricsDisplay::displayMultiRowSection(std::ostream& os, const LayoutSection& section) const
+{
+    FormulaEvaluator evaluator;
+    const auto& metrics = m_config->getMetrics();
+    const size_t numRows = section.rowLabels.size();
+
+    // Headers: "Skt" | "" (row-label col) | col-group-1 | col-group-2 | ...
+    std::vector<std::string> headers = {"Skt", ""};
+    // metricMatrix[colIdx][rowIdx] = index into metrics[], or -1 if absent
+    std::vector<std::vector<int>> metricMatrix;
+    for (const auto& [colHeader, colMetricNames] : section.columns)
+    {
+        headers.push_back(colHeader);
+        std::vector<int> col(numRows, -1);
+        for (size_t r = 0; r < colMetricNames.size() && r < numRows; ++r)
+        {
+            for (size_t mi = 0; mi < metrics.size(); ++mi)
+            {
+                if (metrics[mi].name == colMetricNames[r])
+                {
+                    col[r] = static_cast<int>(mi);
+                    break;
+                }
+            }
+        }
+        metricMatrix.push_back(std::move(col));
+    }
+
+    TableRenderer table;
+    table.setHeaders(headers);
+    if (!section.title.empty())
+        table.addSectionHeader(section.title);
+
+    for (uint32 s = 0; s < m_numSockets; ++s)
+    {
+        for (size_t r = 0; r < numRows; ++r)
+        {
+            std::vector<std::string> row;
+            row.push_back(r == 0 ? std::to_string(s) : "");  // socket number only in first sub-row
+            row.push_back(section.rowLabels[r]);
+            for (const auto& col : metricMatrix)
+            {
+                int mi = col[r];
+                if (mi < 0)
+                    row.push_back("");
+                else
+                {
+                    double val = evaluator.evaluate(metrics[mi].formula, (*m_counterValues)[s]);
+                    row.push_back(formatValue(val));
+                }
+            }
+            table.addRow(row);
+        }
+    }
+
+    if (!section.systemWideMetrics.empty())
+    {
+        auto systemValues = getSystemCounterValues();
+        std::vector<std::pair<std::string,std::string>> sysSection;
+        for (const auto& sysName : section.systemWideMetrics)
+        {
+            for (const auto& m : metrics)
+            {
+                if (m.name == sysName)
+                {
+                    double val = evaluator.evaluate(m.formula, systemValues);
+                    sysSection.emplace_back(metricDisplayName(m), formatValue(val));
+                    break;
+                }
+            }
+        }
+        if (!sysSection.empty())
+            table.addSystemSection("System Wide", sysSection);
+    }
+
+    table.render(os);
+    os << "\n";
 }
 
 void MetricsDisplay::displayFlatMode(std::ostream& os) const
@@ -580,22 +676,38 @@ static void print_available_metrics(const string& metricsPath, const string& pla
     const auto& layout = config.getLayout();
     const auto& metrics = config.getMetrics();
 
-    if (layout.size() > 1)
+    auto printMetricByName = [&](const std::string& name, const std::string& indent) {
+        for (const auto& metric : metrics)
+            if (metric.name == name)
+            {
+                cout << indent << metric.name << "  =  " << metric.formula << "\n";
+                break;
+            }
+    };
+
+    bool hasLayout = layout.size() > 1 || (!layout.empty() && layout[0].isMultiRow());
+    if (hasLayout)
     {
         for (const auto& section : layout)
         {
             if (!section.title.empty())
                 cout << "  [" << section.title << "]\n";
-            for (const auto& metricName : section.metrics)
+
+            if (section.isMultiRow())
             {
-                for (const auto& metric : metrics)
+                for (const auto& [colHeader, colMetricNames] : section.columns)
                 {
-                    if (metric.name == metricName)
-                    {
-                        cout << "    " << metric.name << "  =  " << metric.formula << "\n";
-                        break;
-                    }
+                    cout << "  " << colHeader << ":\n";
+                    for (const auto& mName : colMetricNames)
+                        printMetricByName(mName, "    ");
                 }
+                for (const auto& mName : section.systemWideMetrics)
+                    printMetricByName(mName, "    [sys] ");
+            }
+            else
+            {
+                for (const auto& metricName : section.metrics)
+                    printMetricByName(metricName, "    ");
             }
             cout << "\n";
         }
