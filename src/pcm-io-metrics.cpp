@@ -111,6 +111,15 @@ static const BoxChars BOX {
 };
 #endif
 
+void renderCenteredText(std::ostream& os, const std::string& text, size_t width)
+{
+    size_t pad = (width > text.size()) ? width - text.size() : 0;
+    size_t left = pad / 2;
+    for (size_t j = 0; j < left; ++j) os << " ";
+    os << text;
+    for (size_t j = left; j < pad; ++j) os << " ";
+}
+
 void renderLine(std::ostream& os, const char* left, const char* mid,
                 const char* right, const std::vector<size_t>& colWidths)
 {
@@ -165,12 +174,18 @@ void TableRenderer::setHeaders(const std::vector<std::string>& headers)
 
 void TableRenderer::addRow(const std::vector<std::string>& values)
 {
-    m_rows.push_back({false, "", values});
+    m_rows.push_back({false, false, "", values, {}});
 }
 
 void TableRenderer::addSectionHeader(const std::string& title)
 {
-    m_rows.push_back({true, title, {}});
+    m_rows.push_back({true, false, title, {}, {}});
+}
+
+void TableRenderer::addSystemSection(const std::string& title,
+                                     const std::vector<std::pair<std::string,std::string>>& pairs)
+{
+    m_rows.push_back({false, true, title, {}, pairs});
 }
 
 std::vector<size_t> TableRenderer::calculateColumnWidths() const
@@ -257,6 +272,8 @@ void TableRenderer::render(std::ostream& os) const
     }
 
     bool needDataSeparator = true;
+    bool lastRowWasSystem = false;
+    std::vector<size_t> lastWideColWidths;
     for (size_t ri = firstDataRow; ri < m_rows.size(); ++ri)
     {
         const auto& row = m_rows[ri];
@@ -278,6 +295,54 @@ void TableRenderer::render(std::ostream& os) const
             // Columned separator after section title
             renderLine(os, BOX.tee_right, BOX.tee_down, BOX.tee_left, colWidths);
             needDataSeparator = false;
+            lastRowWasSystem = false;
+        }
+        else if (row.isSystemSection)
+        {
+            needDataSeparator = false;
+            size_t N = row.systemPairs.size();
+            if (N == 0) continue;
+
+            // Transition separator: closes socket columns with tee_up (┴)
+            renderLine(os, BOX.tee_right, BOX.tee_up, BOX.tee_left, colWidths);
+
+            // Title row (left-aligned)
+            os << BOX.vertical << " " << row.sectionTitle;
+            size_t titlePad = innerWidth - 1 - row.sectionTitle.size();
+            for (size_t j = 0; j < titlePad; ++j) os << " ";
+            os << BOX.vertical << "\n";
+
+            // Compute N equal column widths
+            size_t innerSpace = innerWidth - (N - 1);
+            std::vector<size_t> wideColWidths(N, innerSpace / N);
+            for (size_t r = 0; r < innerSpace % N; ++r) wideColWidths[r]++;
+
+            // Opening N-column separator (┬)
+            renderLine(os, BOX.tee_right, BOX.tee_down, BOX.tee_left, wideColWidths);
+
+            // Name row (centered)
+            os << BOX.vertical;
+            for (size_t i = 0; i < N; ++i)
+            {
+                renderCenteredText(os, row.systemPairs[i].first, wideColWidths[i]);
+                os << BOX.vertical;
+            }
+            os << "\n";
+
+            // Inner separator (┼)
+            renderLine(os, BOX.tee_right, BOX.cross, BOX.tee_left, wideColWidths);
+
+            // Value row (centered)
+            os << BOX.vertical;
+            for (size_t i = 0; i < N; ++i)
+            {
+                renderCenteredText(os, row.systemPairs[i].second, wideColWidths[i]);
+                os << BOX.vertical;
+            }
+            os << "\n";
+
+            lastWideColWidths = wideColWidths;
+            lastRowWasSystem = true;
         }
         else
         {
@@ -297,11 +362,15 @@ void TableRenderer::render(std::ostream& os) const
                 os << val << " " << BOX.vertical;
             }
             os << "\n";
+            lastRowWasSystem = false;
         }
     }
 
     // Bottom border
-    renderLine(os, BOX.bottom_left, BOX.tee_up, BOX.bottom_right, colWidths);
+    if (lastRowWasSystem)
+        renderLine(os, BOX.bottom_left, BOX.tee_up, BOX.bottom_right, lastWideColWidths);
+    else
+        renderLine(os, BOX.bottom_left, BOX.tee_up, BOX.bottom_right, colWidths);
 }
 
 std::string TableRenderer::renderToString() const

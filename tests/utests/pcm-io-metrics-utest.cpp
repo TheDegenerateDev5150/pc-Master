@@ -282,12 +282,13 @@ TEST_F(TableRendererTest, RenderWithSectionHeader)
 
     // Col widths: max(4,3)+2=6, max(5,3)+2=7
     // Table width = 6+7+3 borders = 16 display cols, inner = 14
+    // Section header is first row → title-at-top: full-width top border, then title, then columned separator
     std::string expected =
-        std::string(B_TL) + hline(6) + B_TD + hline(7) + B_TR + "\n" +
-        B_V + " Read " + B_V + " Write " + B_V + "\n" +
-        B_ML + hline(14) + B_MR + "\n" +
+        std::string(B_TL) + hline(14) + B_TR + "\n" +
         B_V + " PCIe BW      " + B_V + "\n" +
         B_ML + hline(6) + B_TD + hline(7) + B_MR + "\n" +
+        B_V + " Read " + B_V + " Write " + B_V + "\n" +
+        B_ML + hline(6) + B_X + hline(7) + B_MR + "\n" +
         B_V + "  100 " + B_V + "   200 " + B_V + "\n" +
         B_BL + hline(6) + B_TU + hline(7) + B_BR + "\n";
 
@@ -306,6 +307,23 @@ TEST_F(TableRendererTest, RenderEmptyTable)
         B_BL + hline(3) + B_TU + hline(3) + B_BR + "\n";
 
     EXPECT_EQ(result, expected);
+}
+
+TEST_F(TableRendererTest, RenderWithSystemSection)
+{
+    renderer.setHeaders({"Skt", "RdCur"});
+    renderer.addSectionHeader("PCIe Data");
+    renderer.addRow({"0", "100"});
+    renderer.addSystemSection("System Wide",
+        {{"TotRd", "6400"}, {"TotWr", "3200"}});
+    std::string result = renderer.renderToString();
+
+    EXPECT_NE(result.find("System Wide"), std::string::npos);
+    EXPECT_NE(result.find("TotRd"), std::string::npos);
+    EXPECT_NE(result.find("TotWr"), std::string::npos);
+    EXPECT_NE(result.find("6400"), std::string::npos);
+    EXPECT_NE(result.find("3200"), std::string::npos);
+    EXPECT_GT(result.size(), 0u);
 }
 
 // --- Layout Tests ---

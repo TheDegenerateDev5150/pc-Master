@@ -56,14 +56,18 @@ public:
     void setHeaders(const std::vector<std::string>& headers);
     void addRow(const std::vector<std::string>& values);
     void addSectionHeader(const std::string& title);
+    void addSystemSection(const std::string& title,
+                          const std::vector<std::pair<std::string,std::string>>& pairs);
     void render(std::ostream& os) const;
     std::string renderToString() const;
 
 private:
     struct Row {
         bool isSectionHeader = false;
+        bool isSystemSection = false;
         std::string sectionTitle;
         std::vector<std::string> values;
+        std::vector<std::pair<std::string,std::string>> systemPairs;
     };
     std::vector<std::string> m_headers;
     std::vector<Row> m_rows;

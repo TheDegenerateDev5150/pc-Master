@@ -395,6 +395,7 @@ void MetricsDisplay::displayLayoutMode(std::ostream& os) const
     {
         std::vector<std::string> headers;
         std::vector<size_t> metricIdxs;
+        std::vector<size_t> sysMetricIdxs;
         bool hasSocketMetrics = false;
         bool hasSystemMetrics = false;
 
@@ -404,18 +405,23 @@ void MetricsDisplay::displayLayoutMode(std::ostream& os) const
             {
                 if (metrics[i].name == metricName)
                 {
-                    headers.push_back(metricDisplayName(metrics[i]));
-                    metricIdxs.push_back(i);
                     if (metrics[i].aggregation == "system")
+                    {
+                        sysMetricIdxs.push_back(i);
                         hasSystemMetrics = true;
+                    }
                     else
+                    {
+                        headers.push_back(metricDisplayName(metrics[i]));
+                        metricIdxs.push_back(i);
                         hasSocketMetrics = true;
+                    }
                     break;
                 }
             }
         }
 
-        if (headers.empty()) continue;
+        if (headers.empty() && sysMetricIdxs.empty()) continue;
 
         std::vector<std::string> fullHeaders;
         if (hasSocketMetrics)
@@ -447,15 +453,14 @@ void MetricsDisplay::displayLayoutMode(std::ostream& os) const
         if (hasSystemMetrics)
         {
             auto systemValues = getSystemCounterValues();
-            std::vector<std::string> row;
-            if (hasSocketMetrics) row.push_back("*");
-            for (size_t idx : metricIdxs)
+            std::vector<std::pair<std::string,std::string>> sysSection;
+            for (size_t idx : sysMetricIdxs)
             {
-                if (metrics[idx].aggregation != "system") continue;
+                std::string name = metricDisplayName(metrics[idx]);
                 double val = evaluator.evaluate(metrics[idx].formula, systemValues);
-                row.push_back(formatValue(val));
+                sysSection.emplace_back(name, formatValue(val));
             }
-            table.addRow(row);
+            table.addSystemSection("System Wide", sysSection);
         }
 
         table.render(os);
