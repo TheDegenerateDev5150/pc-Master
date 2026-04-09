@@ -1,20 +1,36 @@
 {
+    "events": [
+        {
+            "EventName": "UCRdF",
+            "Unit": "CHA",
+            "EventCode": "0x35",
+            "UMask": "0x01",
+            "UMaskExt": "0xC877DE"
+        },
+        {
+            "EventName": "WiL",
+            "Unit": "CHA",
+            "EventCode": "0x35",
+            "UMask": "0x01",
+            "UMaskExt": "0xC87FDE"
+        }
+    ],
     "metrics": [
         {
-            "name": "PCIe Rd (B)",
-            "formula": "UNC_CHA_TOR_INSERTS.IO_PCIRDCUR * 64",
+            "name": "PCIe Read (B)",
+            "formula": "(UNC_CHA_TOR_INSERTS.IO_MISS_PCIRDCUR + UNC_CHA_TOR_INSERTS.IO_HIT_PCIRDCUR) * 64",
             "short_name": "PCIeRd",
             "aggregation": "socket"
         },
         {
-            "name": "PCIe Wr (B)",
-            "formula": "(UNC_CHA_TOR_INSERTS.IO_ITOM + UNC_CHA_TOR_INSERTS.IO_ITOMCACHENEAR) * 64",
+            "name": "PCIe Write (B)",
+            "formula": "(UNC_CHA_TOR_INSERTS.IO_MISS_ITOM + UNC_CHA_TOR_INSERTS.IO_HIT_ITOM + UNC_CHA_TOR_INSERTS.IO_MISS_ITOMCACHENEAR + UNC_CHA_TOR_INSERTS.IO_HIT_ITOMCACHENEAR) * 64",
             "short_name": "PCIeWr",
             "aggregation": "socket"
         },
         {
             "name": "PCIRdCur",
-            "formula": "UNC_CHA_TOR_INSERTS.IO_PCIRDCUR",
+            "formula": "UNC_CHA_TOR_INSERTS.IO_MISS_PCIRDCUR + UNC_CHA_TOR_INSERTS.IO_HIT_PCIRDCUR",
             "short_name": "RdCur",
             "aggregation": "socket"
         },
@@ -32,7 +48,7 @@
         },
         {
             "name": "ItoM",
-            "formula": "UNC_CHA_TOR_INSERTS.IO_ITOM",
+            "formula": "UNC_CHA_TOR_INSERTS.IO_MISS_ITOM + UNC_CHA_TOR_INSERTS.IO_HIT_ITOM",
             "short_name": "ItoM",
             "aggregation": "socket"
         },
@@ -50,7 +66,7 @@
         },
         {
             "name": "ItoMCacheNear",
-            "formula": "UNC_CHA_TOR_INSERTS.IO_ITOMCACHENEAR",
+            "formula": "UNC_CHA_TOR_INSERTS.IO_MISS_ITOMCACHENEAR + UNC_CHA_TOR_INSERTS.IO_HIT_ITOMCACHENEAR",
             "short_name": "ITMCN",
             "aggregation": "socket"
         },
@@ -67,14 +83,50 @@
             "aggregation": "socket"
         },
         {
-            "name": "Total Rd (B)",
-            "formula": "UNC_CHA_TOR_INSERTS.IO_PCIRDCUR * 64",
+            "name": "UCRdF",
+            "formula": "UCRdF",
+            "short_name": "UCRdF",
+            "aggregation": "socket"
+        },
+        {
+            "name": "WiL",
+            "formula": "WiL",
+            "short_name": "WiL",
+            "aggregation": "socket"
+        },
+        {
+            "name": "PCIe Rd Miss (B)",
+            "formula": "UNC_CHA_TOR_INSERTS.IO_MISS_PCIRDCUR * 64",
+            "short_name": "RdMissB",
+            "aggregation": "socket"
+        },
+        {
+            "name": "PCIe Rd Hit (B)",
+            "formula": "UNC_CHA_TOR_INSERTS.IO_HIT_PCIRDCUR * 64",
+            "short_name": "RdHitB",
+            "aggregation": "socket"
+        },
+        {
+            "name": "PCIe Wr Miss (B)",
+            "formula": "(UNC_CHA_TOR_INSERTS.IO_MISS_ITOM + UNC_CHA_TOR_INSERTS.IO_MISS_ITOMCACHENEAR) * 64",
+            "short_name": "WrMissB",
+            "aggregation": "socket"
+        },
+        {
+            "name": "PCIe Wr Hit (B)",
+            "formula": "(UNC_CHA_TOR_INSERTS.IO_HIT_ITOM + UNC_CHA_TOR_INSERTS.IO_HIT_ITOMCACHENEAR) * 64",
+            "short_name": "WrHitB",
+            "aggregation": "socket"
+        },
+        {
+            "name": "Total Read (B)",
+            "formula": "(UNC_CHA_TOR_INSERTS.IO_MISS_PCIRDCUR + UNC_CHA_TOR_INSERTS.IO_HIT_PCIRDCUR) * 64",
             "short_name": "TotRd",
             "aggregation": "system"
         },
         {
-            "name": "Total Wr (B)",
-            "formula": "(UNC_CHA_TOR_INSERTS.IO_ITOM + UNC_CHA_TOR_INSERTS.IO_ITOMCACHENEAR) * 64",
+            "name": "Total Write (B)",
+            "formula": "(UNC_CHA_TOR_INSERTS.IO_MISS_ITOM + UNC_CHA_TOR_INSERTS.IO_HIT_ITOM + UNC_CHA_TOR_INSERTS.IO_MISS_ITOMCACHENEAR + UNC_CHA_TOR_INSERTS.IO_HIT_ITOMCACHENEAR) * 64",
             "short_name": "TotWr",
             "aggregation": "system"
         }
@@ -82,20 +134,35 @@
     "layout": {
         "sections": [
             {
-                "title": "PCIe Bandwidth",
-                "metrics": ["PCIe Rd (B)", "PCIe Wr (B)"]
+                "title": "PCIe Data",
+                "rows": ["Total", "Miss", "Hit"],
+                "columns": {
+                    "PCIRdCur Events": ["PCIRdCur", "PCIRdCur Miss", "PCIRdCur Hit"],
+                    "ItoM Events": ["ItoM", "ItoM Miss", "ItoM Hit"],
+                    "ItoMCacheNear Events": ["ItoMCacheNear", "ItoMCacheNear Miss", "ItoMCacheNear Hit"],
+                    "WiL Events": ["WiL"]
+                },
+                "system-wide-metrics": ["Total Read (B)", "Total Write (B)"]
             },
             {
-                "title": "Read Events",
-                "metrics": ["PCIRdCur", "PCIRdCur Miss", "PCIRdCur Hit"]
+                "title": "PCIe Data",
+                "metrics": [
+                    "PCIRdCur",
+                    "PCIRdCur Miss",
+                    "PCIRdCur Hit",
+                    "ItoM",
+                    "ItoM Miss",
+                    "ItoM Hit",
+                    "ItoMCacheNear",
+                    "ItoMCacheNear Miss",
+                    "ItoMCacheNear Hit",
+                    "Total Read (B)",
+                    "Total Write (B)"
+                ]
             },
             {
-                "title": "Write Events",
-                "metrics": ["ItoM", "ItoM Miss", "ItoM Hit", "ItoMCacheNear", "ItoMCacheNear Miss", "ItoMCacheNear Hit"]
-            },
-            {
-                "title": "System Total",
-                "metrics": ["Total Rd (B)", "Total Wr (B)"]
+                "title": "MMIO Access",
+                "metrics": ["UCRdF", "WiL"]
             }
         ]
     }
