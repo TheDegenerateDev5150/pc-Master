@@ -639,4 +639,54 @@ void MetricsConfig::printValidatedMetrics(std::ostream& os, const EventValidator
     os << "\n" << validCount << " of " << result.metrics.size() << " metrics valid\n";
 }
 
+// --- CounterConstraintGrouper ---
+
+bool CounterConstraintGrouper::parseCounterField(const std::string& counterStr, std::set<int>& allowed)
+{
+    allowed.clear();
+    if (counterStr.empty())
+        return false;
+
+    if (isFixedCounter(counterStr))
+        return true;
+
+    std::stringstream ss(counterStr);
+    for (int i = 0; ss >> i;)
+    {
+        allowed.insert(i);
+        if (ss.peek() == ',')
+            ss.ignore();
+    }
+    return !allowed.empty();
+}
+
+bool CounterConstraintGrouper::isFixedCounter(const std::string& counterStr)
+{
+    return counterStr.find("Fixed") != std::string::npos
+        || counterStr.find("FIXED") != std::string::npos;
+}
+
+CounterConstraintGrouper::EventPlacement CounterConstraintGrouper::placeEvent(
+    const std::string& pmuName, const std::set<int>& allowedCounters)
+{
+    for (size_t g = 0; g < m_slotMap.size(); ++g)
+    {
+        auto& occupied = m_slotMap[g][pmuName];
+        for (int c : allowedCounters)
+        {
+            if (occupied.find(c) == occupied.end())
+            {
+                occupied.insert(c);
+                return {g, static_cast<size_t>(c)};
+            }
+        }
+    }
+
+    size_t newG = m_slotMap.size();
+    m_slotMap.emplace_back();
+    int c = *allowedCounters.begin();
+    m_slotMap[newG][pmuName].insert(c);
+    return {newG, static_cast<size_t>(c)};
+}
+
 } // namespace pcm

@@ -100,6 +100,39 @@ std::string MetricsDrivenPlatform::cpuModelToDir(int cpuModel)
     }
 }
 
+// Counter-constraint-aware event grouping
+//
+// Each hardware PMU has N physical counters (e.g., CHA has 4: slots 0-3).
+// Each perfmon event has a "Counter" field listing which slots it can use
+// (e.g., "0,1" means only slots 0 or 1). The position in the programmable
+// vector maps 1:1 to the hardware counter slot:
+//
+//   programmable[0] -> HW counter 0
+//   programmable[1] -> HW counter 1
+//   ...
+//
+// When more events need the same slot than one group can hold, we create
+// multiple measurement groups that are time-multiplexed during collect().
+//
+// Example: 5 CHA events with these constraints:
+//
+//   Event A: Counter "0,1"       Event D: Counter "0,1,2,3"
+//   Event B: Counter "0,1"       Event E: Counter "2,3"
+//   Event C: Counter "0"
+//
+//   Group 0                      Group 1
+//   slot 0: C  (only fits 0)    slot 0: A  (spillover)
+//   slot 1: B  (fits 0,1)
+//   slot 2: D  (fits 0-3)
+//   slot 3: E  (fits 2,3)
+//
+//   collect() programs Group 0, sleeps, reads counters,
+//   then programs Group 1, sleeps, reads counters.
+//
+// Events without a Counter field are rejected (local events in metrics.json
+// must explicitly declare it). Fixed-counter events go to the fixed vector.
+// Register events (mmio, pcicfg, etc.) bypass slot constraints entirely.
+//
 bool MetricsDrivenPlatform::init(PCM* pcm, const std::string& metricsPath, const std::string& eventPrefix)
 {
     m_pcm = pcm;
@@ -121,13 +154,15 @@ bool MetricsDrivenPlatform::init(PCM* pcm, const std::string& metricsPath, const
     // Register local events from metrics.json (takes priority over perfmon)
     m_resolver.addLocalEvents(m_config.getLocalEvents());
 
-    // Resolve all events referenced in metric formulas, batching into groups of
-    // up to ServerUncoreCounterState::maxCounters events per PMU type.
+    // Resolve all events referenced in metric formulas, batching into groups
+    // respecting per-event hardware counter constraints from the Counter field.
+    CounterConstraintGrouper grouper;
+    PCM::RawEventConfig placeholder{{0, 0, 0, 0, 0, 0}, ""};
     auto eventNames = m_config.extractEventNames();
     for (const auto& eventName : eventNames)
     {
         if (m_eventLocations.count(eventName))
-            continue;  // already resolved
+            continue;
 
         std::string pmuName;
         PCM::RawEventConfig config;
@@ -137,24 +172,52 @@ bool MetricsDrivenPlatform::init(PCM* pcm, const std::string& metricsPath, const
             continue;
         }
 
-        // Find first group that still has room for this PMU type
-        size_t groupIdx = m_pmuConfigGroups.size();  // default: start a new group
-        for (size_t g = 0; g < m_pmuConfigGroups.size(); ++g)
+        if (isRegisterEvent(pmuName))
         {
-            const auto& existing = m_pmuConfigGroups[g][pmuName].programmable;
-            if (isRegisterEvent(pmuName) || existing.size() < ServerUncoreCounterState::maxCounters)
-            {
-                groupIdx = g;
-                break;
-            }
+            if (m_pmuConfigGroups.empty())
+                m_pmuConfigGroups.emplace_back();
+            auto& grp = m_pmuConfigGroups[0];
+            size_t idx = grp[pmuName].programmable.size();
+            grp[pmuName].programmable.push_back(config);
+            m_eventLocations[eventName] = {0, pmuName, idx};
+            continue;
         }
-        if (groupIdx == m_pmuConfigGroups.size())
+
+        std::string counterStr = m_resolver.getField(eventName, "Counter");
+        if (counterStr.empty())
+        {
+            cerr << "ERROR: Event \"" << eventName << "\" has no Counter field. "
+                 << "Add \"Counter\": \"0,1,2,3\" (or appropriate value) to the event definition in metrics.json\n";
+            return false;
+        }
+
+        if (CounterConstraintGrouper::isFixedCounter(counterStr))
+        {
+            if (m_pmuConfigGroups.empty())
+                m_pmuConfigGroups.emplace_back();
+            m_pmuConfigGroups[0][pmuName].fixed.push_back(config);
+            m_eventLocations[eventName] = {0, pmuName, 0};
+            continue;
+        }
+
+        std::set<int> allowedCounters;
+        if (!CounterConstraintGrouper::parseCounterField(counterStr, allowedCounters))
+        {
+            cerr << "ERROR: Could not parse Counter field \"" << counterStr
+                 << "\" for event " << eventName << "\n";
+            return false;
+        }
+
+        auto placement = grouper.placeEvent(pmuName, allowedCounters);
+
+        while (m_pmuConfigGroups.size() <= placement.groupIndex)
             m_pmuConfigGroups.emplace_back();
 
-        auto& grp = m_pmuConfigGroups[groupIdx];
-        size_t idx = grp[pmuName].programmable.size();
-        grp[pmuName].programmable.push_back(config);
-        m_eventLocations[eventName] = {groupIdx, pmuName, idx};
+        auto& prog = m_pmuConfigGroups[placement.groupIndex][pmuName].programmable;
+        if (prog.size() <= placement.counterIndex)
+            prog.resize(placement.counterIndex + 1, placeholder);
+        prog[placement.counterIndex] = config;
+        m_eventLocations[eventName] = {placement.groupIndex, pmuName, placement.counterIndex};
     }
 
     if (m_eventLocations.empty())

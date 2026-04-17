@@ -7,6 +7,193 @@
 
 using namespace pcm;
 
+// --- CounterConstraintGrouper tests ---
+
+TEST(ParseCounterFieldTest, AllFourCounters)
+{
+    std::set<int> allowed;
+    EXPECT_TRUE(CounterConstraintGrouper::parseCounterField("0,1,2,3", allowed));
+    EXPECT_EQ(allowed, (std::set<int>{0, 1, 2, 3}));
+}
+
+TEST(ParseCounterFieldTest, RestrictedCounters01)
+{
+    std::set<int> allowed;
+    EXPECT_TRUE(CounterConstraintGrouper::parseCounterField("0,1", allowed));
+    EXPECT_EQ(allowed, (std::set<int>{0, 1}));
+}
+
+TEST(ParseCounterFieldTest, RestrictedCounters23)
+{
+    std::set<int> allowed;
+    EXPECT_TRUE(CounterConstraintGrouper::parseCounterField("2,3", allowed));
+    EXPECT_EQ(allowed, (std::set<int>{2, 3}));
+}
+
+TEST(ParseCounterFieldTest, SingleCounter)
+{
+    std::set<int> allowed;
+    EXPECT_TRUE(CounterConstraintGrouper::parseCounterField("0", allowed));
+    EXPECT_EQ(allowed, (std::set<int>{0}));
+}
+
+TEST(ParseCounterFieldTest, FixedUpperCase)
+{
+    std::set<int> allowed;
+    EXPECT_TRUE(CounterConstraintGrouper::parseCounterField("FIXED", allowed));
+    EXPECT_TRUE(allowed.empty());
+}
+
+TEST(ParseCounterFieldTest, FixedCounterN)
+{
+    std::set<int> allowed;
+    EXPECT_TRUE(CounterConstraintGrouper::parseCounterField("Fixed counter 0", allowed));
+    EXPECT_TRUE(allowed.empty());
+}
+
+TEST(ParseCounterFieldTest, EmptyStringReturnsFalse)
+{
+    std::set<int> allowed;
+    EXPECT_FALSE(CounterConstraintGrouper::parseCounterField("", allowed));
+}
+
+TEST(ParseCounterFieldTest, EightCounters)
+{
+    std::set<int> allowed;
+    EXPECT_TRUE(CounterConstraintGrouper::parseCounterField("0,1,2,3,4,5,6,7", allowed));
+    EXPECT_EQ(allowed, (std::set<int>{0, 1, 2, 3, 4, 5, 6, 7}));
+}
+
+TEST(IsFixedCounterTest, FixedUpperCase)
+{
+    EXPECT_TRUE(CounterConstraintGrouper::isFixedCounter("FIXED"));
+}
+
+TEST(IsFixedCounterTest, FixedCounterN)
+{
+    EXPECT_TRUE(CounterConstraintGrouper::isFixedCounter("Fixed counter 0"));
+}
+
+TEST(IsFixedCounterTest, ProgrammableCounters)
+{
+    EXPECT_FALSE(CounterConstraintGrouper::isFixedCounter("0,1,2,3"));
+}
+
+TEST(IsFixedCounterTest, EmptyString)
+{
+    EXPECT_FALSE(CounterConstraintGrouper::isFixedCounter(""));
+}
+
+TEST(EventGroupingTest, BasicSequentialPlacement)
+{
+    CounterConstraintGrouper grouper;
+    std::set<int> all4{0, 1, 2, 3};
+    auto p0 = grouper.placeEvent("cha", all4);
+    auto p1 = grouper.placeEvent("cha", all4);
+    auto p2 = grouper.placeEvent("cha", all4);
+    auto p3 = grouper.placeEvent("cha", all4);
+
+    EXPECT_EQ(p0.groupIndex, 0u);
+    EXPECT_EQ(p1.groupIndex, 0u);
+    EXPECT_EQ(p2.groupIndex, 0u);
+    EXPECT_EQ(p3.groupIndex, 0u);
+
+    std::set<size_t> counters{p0.counterIndex, p1.counterIndex, p2.counterIndex, p3.counterIndex};
+    EXPECT_EQ(counters, (std::set<size_t>{0, 1, 2, 3}));
+}
+
+TEST(EventGroupingTest, OverflowToSecondGroup)
+{
+    CounterConstraintGrouper grouper;
+    std::set<int> all4{0, 1, 2, 3};
+    for (int i = 0; i < 4; ++i)
+        grouper.placeEvent("cha", all4);
+
+    auto p4 = grouper.placeEvent("cha", all4);
+    EXPECT_EQ(p4.groupIndex, 1u);
+}
+
+TEST(EventGroupingTest, CounterZeroOnlyConflict)
+{
+    CounterConstraintGrouper grouper;
+    std::set<int> zero{0};
+    auto p0 = grouper.placeEvent("cha", zero);
+    auto p1 = grouper.placeEvent("cha", zero);
+
+    EXPECT_EQ(p0.groupIndex, 0u);
+    EXPECT_EQ(p0.counterIndex, 0u);
+    EXPECT_EQ(p1.groupIndex, 1u);
+    EXPECT_EQ(p1.counterIndex, 0u);
+}
+
+TEST(EventGroupingTest, MixedConstraintsFitOneGroup)
+{
+    CounterConstraintGrouper grouper;
+    std::set<int> c01{0, 1};
+    std::set<int> c23{2, 3};
+    std::set<int> all4{0, 1, 2, 3};
+
+    auto pA = grouper.placeEvent("cha", c01);
+    auto pB = grouper.placeEvent("cha", c23);
+    auto pC = grouper.placeEvent("cha", all4);
+
+    EXPECT_EQ(pA.groupIndex, 0u);
+    EXPECT_EQ(pB.groupIndex, 0u);
+    EXPECT_EQ(pC.groupIndex, 0u);
+
+    EXPECT_TRUE(c01.count(pA.counterIndex));
+    EXPECT_TRUE(c23.count(pB.counterIndex));
+    EXPECT_NE(pA.counterIndex, pC.counterIndex);
+    EXPECT_NE(pB.counterIndex, pC.counterIndex);
+}
+
+TEST(EventGroupingTest, IIOPatternFitsOneGroup)
+{
+    CounterConstraintGrouper grouper;
+    std::set<int> c01{0, 1};
+    std::set<int> c23{2, 3};
+
+    auto p0 = grouper.placeEvent("iio", c01);
+    auto p1 = grouper.placeEvent("iio", c01);
+    auto p2 = grouper.placeEvent("iio", c23);
+    auto p3 = grouper.placeEvent("iio", c23);
+
+    EXPECT_EQ(p0.groupIndex, 0u);
+    EXPECT_EQ(p1.groupIndex, 0u);
+    EXPECT_EQ(p2.groupIndex, 0u);
+    EXPECT_EQ(p3.groupIndex, 0u);
+}
+
+TEST(EventGroupingTest, IIOPatternOverflow)
+{
+    CounterConstraintGrouper grouper;
+    std::set<int> c01{0, 1};
+    std::set<int> c23{2, 3};
+
+    grouper.placeEvent("iio", c01);
+    grouper.placeEvent("iio", c01);
+    auto overflow = grouper.placeEvent("iio", c01);
+    grouper.placeEvent("iio", c23);
+    grouper.placeEvent("iio", c23);
+
+    EXPECT_EQ(overflow.groupIndex, 1u);
+    EXPECT_TRUE(c01.count(overflow.counterIndex));
+}
+
+TEST(EventGroupingTest, MultiplePMUsIndependent)
+{
+    CounterConstraintGrouper grouper;
+    std::set<int> all4{0, 1, 2, 3};
+
+    auto pCha = grouper.placeEvent("cha", all4);
+    auto pIio = grouper.placeEvent("iio", all4);
+
+    EXPECT_EQ(pCha.groupIndex, 0u);
+    EXPECT_EQ(pIio.groupIndex, 0u);
+    EXPECT_EQ(pCha.counterIndex, 0u);
+    EXPECT_EQ(pIio.counterIndex, 0u);
+}
+
 class FormulaEvaluatorTest : public ::testing::Test {
 protected:
     FormulaEvaluator eval;

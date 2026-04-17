@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <set>
+#include <map>
 #include <functional>
 #include <unordered_map>
 #include <sstream>
@@ -83,6 +84,23 @@ private:
 
     std::vector<size_t> calculateColumnWidths() const;
     size_t calculateTableWidth(const std::vector<size_t>& colWidths) const;
+};
+
+class CounterConstraintGrouper {
+public:
+    struct EventPlacement {
+        size_t groupIndex;
+        size_t counterIndex;
+    };
+
+    static bool parseCounterField(const std::string& counterStr, std::set<int>& allowed);
+    static bool isFixedCounter(const std::string& counterStr);
+
+    EventPlacement placeEvent(const std::string& pmuName,
+                              const std::set<int>& allowedCounters);
+
+private:
+    std::vector<std::map<std::string, std::set<int>>> m_slotMap;
 };
 
 class MetricsConfig {
