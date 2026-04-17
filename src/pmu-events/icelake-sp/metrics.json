@@ -1,134 +1,104 @@
 {
     "events": [
         {
-            "EventName": "UCRdF",
+            "EventName": "EVENT_EXAMPLE",
             "Unit": "CHA",
             "EventCode": "0x35",
             "UMask": "0x01",
-            "UMaskExt": "0xC877DE"
-        },
-        {
-            "EventName": "WiL",
-            "Unit": "CHA",
-            "EventCode": "0x35",
-            "UMask": "0x01",
-            "UMaskExt": "0xC87FDE"
+            "UMaskExt": "0xC87FDE",
+            "Counter": "0,1,2,3"
         }
     ],
     "metrics": [
         {
-            "name": "PCIe Read (B)",
+            "name": "PCIRdCur (B)",
             "formula": "(UNC_CHA_TOR_INSERTS.IO_MISS_PCIRDCUR + UNC_CHA_TOR_INSERTS.IO_HIT_PCIRDCUR) * 64",
-            "short_name": "PCIeRd",
+            "short_name": "PCIRdCur",
             "aggregation": "socket"
         },
         {
-            "name": "PCIe Write (B)",
-            "formula": "(UNC_CHA_TOR_INSERTS.IO_MISS_ITOM + UNC_CHA_TOR_INSERTS.IO_HIT_ITOM + UNC_CHA_TOR_INSERTS.IO_MISS_ITOMCACHENEAR + UNC_CHA_TOR_INSERTS.IO_HIT_ITOMCACHENEAR) * 64",
-            "short_name": "PCIeWr",
+            "name": "PCIRdCur Miss (B)",
+            "formula": "UNC_CHA_TOR_INSERTS.IO_MISS_PCIRDCUR * 64",
+            "short_name": "PCIRdCur Miss",
             "aggregation": "socket"
         },
         {
-            "name": "PCIRdCur",
-            "formula": "UNC_CHA_TOR_INSERTS.IO_MISS_PCIRDCUR + UNC_CHA_TOR_INSERTS.IO_HIT_PCIRDCUR",
-            "short_name": "RdCur",
+            "name": "PCIRdCur Hit (B)",
+            "formula": "UNC_CHA_TOR_INSERTS.IO_HIT_PCIRDCUR * 64",
+            "short_name": "PCIRdCur Hit",
             "aggregation": "socket"
         },
         {
-            "name": "PCIRdCur Miss",
-            "formula": "UNC_CHA_TOR_INSERTS.IO_MISS_PCIRDCUR",
-            "short_name": "RdMiss",
-            "aggregation": "socket"
-        },
-        {
-            "name": "PCIRdCur Hit",
-            "formula": "UNC_CHA_TOR_INSERTS.IO_HIT_PCIRDCUR",
-            "short_name": "RdHit",
-            "aggregation": "socket"
-        },
-        {
-            "name": "ItoM",
-            "formula": "UNC_CHA_TOR_INSERTS.IO_MISS_ITOM + UNC_CHA_TOR_INSERTS.IO_HIT_ITOM",
+            "name": "ItoM (B)",
+            "formula": "(UNC_CHA_TOR_INSERTS.IO_MISS_ITOM + UNC_CHA_TOR_INSERTS.IO_HIT_ITOM) * 64",
             "short_name": "ItoM",
             "aggregation": "socket"
         },
         {
-            "name": "ItoM Miss",
-            "formula": "UNC_CHA_TOR_INSERTS.IO_MISS_ITOM",
-            "short_name": "ItoMMiss",
+            "name": "ItoM Miss (B)",
+            "formula": "UNC_CHA_TOR_INSERTS.IO_MISS_ITOM * 64",
+            "short_name": "ItoM Miss",
             "aggregation": "socket"
         },
         {
-            "name": "ItoM Hit",
-            "formula": "UNC_CHA_TOR_INSERTS.IO_HIT_ITOM",
-            "short_name": "ItoMHit",
+            "name": "ItoM Hit (B)",
+            "formula": "UNC_CHA_TOR_INSERTS.IO_HIT_ITOM * 64",
+            "short_name": "ItoM Hit",
             "aggregation": "socket"
         },
         {
-            "name": "ItoMCacheNear",
-            "formula": "UNC_CHA_TOR_INSERTS.IO_MISS_ITOMCACHENEAR + UNC_CHA_TOR_INSERTS.IO_HIT_ITOMCACHENEAR",
-            "short_name": "ITMCN",
+            "name": "ItoMCacheNear (B)",
+            "formula": "(UNC_CHA_TOR_INSERTS.IO_MISS_ITOMCACHENEAR + UNC_CHA_TOR_INSERTS.IO_HIT_ITOMCACHENEAR) * 64",
+            "short_name": "ItoMCacheNear",
             "aggregation": "socket"
         },
         {
-            "name": "ItoMCacheNear Miss",
-            "formula": "UNC_CHA_TOR_INSERTS.IO_MISS_ITOMCACHENEAR",
-            "short_name": "ITMCNMiss",
+            "name": "ItoMCacheNear Miss (B)",
+            "formula": "UNC_CHA_TOR_INSERTS.IO_MISS_ITOMCACHENEAR * 64",
+            "short_name": "ItoMCacheNear Miss",
             "aggregation": "socket"
         },
         {
-            "name": "ItoMCacheNear Hit",
-            "formula": "UNC_CHA_TOR_INSERTS.IO_HIT_ITOMCACHENEAR",
-            "short_name": "ITMCNHit",
-            "aggregation": "socket"
-        },
-        {
-            "name": "UCRdF",
-            "formula": "UCRdF",
-            "short_name": "UCRdF",
-            "aggregation": "socket"
-        },
-        {
-            "name": "WiL",
-            "formula": "WiL",
-            "short_name": "WiL",
-            "aggregation": "socket"
-        },
-        {
-            "name": "PCIe Rd Miss (B)",
-            "formula": "UNC_CHA_TOR_INSERTS.IO_MISS_PCIRDCUR * 64",
-            "short_name": "RdMissB",
-            "aggregation": "socket"
-        },
-        {
-            "name": "PCIe Rd Hit (B)",
-            "formula": "UNC_CHA_TOR_INSERTS.IO_HIT_PCIRDCUR * 64",
-            "short_name": "RdHitB",
-            "aggregation": "socket"
-        },
-        {
-            "name": "PCIe Wr Miss (B)",
-            "formula": "(UNC_CHA_TOR_INSERTS.IO_MISS_ITOM + UNC_CHA_TOR_INSERTS.IO_MISS_ITOMCACHENEAR) * 64",
-            "short_name": "WrMissB",
-            "aggregation": "socket"
-        },
-        {
-            "name": "PCIe Wr Hit (B)",
-            "formula": "(UNC_CHA_TOR_INSERTS.IO_HIT_ITOM + UNC_CHA_TOR_INSERTS.IO_HIT_ITOMCACHENEAR) * 64",
-            "short_name": "WrHitB",
+            "name": "ItoMCacheNear Hit (B)",
+            "formula": "UNC_CHA_TOR_INSERTS.IO_HIT_ITOMCACHENEAR * 64",
+            "short_name": "ItoMCacheNear Hit",
             "aggregation": "socket"
         },
         {
             "name": "Total Read (B)",
             "formula": "(UNC_CHA_TOR_INSERTS.IO_MISS_PCIRDCUR + UNC_CHA_TOR_INSERTS.IO_HIT_PCIRDCUR) * 64",
-            "short_name": "TotRd",
+            "short_name": "Total Read (B)",
             "aggregation": "system"
         },
         {
             "name": "Total Write (B)",
             "formula": "(UNC_CHA_TOR_INSERTS.IO_MISS_ITOM + UNC_CHA_TOR_INSERTS.IO_HIT_ITOM + UNC_CHA_TOR_INSERTS.IO_MISS_ITOMCACHENEAR + UNC_CHA_TOR_INSERTS.IO_HIT_ITOMCACHENEAR) * 64",
-            "short_name": "TotWr",
+            "short_name": "Total Write (B)",
             "aggregation": "system"
+        },
+        {
+            "name": "WCILF",
+            "formula": "UNC_CHA_TOR_INSERTS.IA_WCILF",
+            "short_name": "WCILF",
+            "aggregation": "socket"
+        },
+        {
+            "name": "WCIL",
+            "formula": "UNC_CHA_TOR_INSERTS.IA_WCIL",
+            "short_name": "WCIL",
+            "aggregation": "socket"
+        },
+        {
+            "name": "WiL Miss",
+            "formula": "UNC_CHA_TOR_INSERTS.IA_MISS_WIL",
+            "short_name": "WiL Miss",
+            "aggregation": "socket"
+        },
+        {
+            "name": "UCRdF Miss",
+            "formula": "UNC_CHA_TOR_INSERTS.IA_MISS_UCRDF",
+            "short_name": "UCRdF Miss",
+            "aggregation": "socket"
         }
     ],
     "layout": {
@@ -137,32 +107,15 @@
                 "title": "PCIe Data",
                 "rows": ["Total", "Miss", "Hit"],
                 "columns": {
-                    "PCIRdCur Events": ["PCIRdCur", "PCIRdCur Miss", "PCIRdCur Hit"],
-                    "ItoM Events": ["ItoM", "ItoM Miss", "ItoM Hit"],
-                    "ItoMCacheNear Events": ["ItoMCacheNear", "ItoMCacheNear Miss", "ItoMCacheNear Hit"],
-                    "WiL Events": ["WiL"]
+                    "PCIRdCur (B)": ["PCIRdCur (B)", "PCIRdCur Miss (B)", "PCIRdCur Hit (B)"],
+                    "ItoM (B)": ["ItoM (B)", "ItoM Miss (B)", "ItoM Hit (B)"],
+                    "ItoMCacheNear (B)": ["ItoMCacheNear (B)", "ItoMCacheNear Miss (B)", "ItoMCacheNear Hit (B)"]
                 },
                 "system-wide-metrics": ["Total Read (B)", "Total Write (B)"]
             },
             {
-                "title": "PCIe Data",
-                "metrics": [
-                    "PCIRdCur",
-                    "PCIRdCur Miss",
-                    "PCIRdCur Hit",
-                    "ItoM",
-                    "ItoM Miss",
-                    "ItoM Hit",
-                    "ItoMCacheNear",
-                    "ItoMCacheNear Miss",
-                    "ItoMCacheNear Hit",
-                    "Total Read (B)",
-                    "Total Write (B)"
-                ]
-            },
-            {
                 "title": "MMIO Access",
-                "metrics": ["UCRdF", "WiL"]
+                "metrics": ["WCILF", "WCIL", "WiL Miss", "UCRdF Miss"]
             }
         ]
     }
