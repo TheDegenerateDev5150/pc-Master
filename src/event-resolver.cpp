@@ -119,7 +119,8 @@ bool PerfmonEventResolver::parseTSV(const std::string& path)
     return true;
 }
 
-bool PerfmonEventResolver::loadPerfmonEvents(const std::string& cpuFamilyModel, const std::string& prefix)
+bool PerfmonEventResolver::parseMapfile(const std::string& cpuFamilyModel, const std::string& prefix,
+                                        std::multimap<std::string, std::string>& eventFiles)
 {
     const std::string mapfilePath = prefix + "/mapfile.csv";
 
@@ -157,7 +158,6 @@ bool PerfmonEventResolver::loadPerfmonEvents(const std::string& cpuFamilyModel, 
         return false;
     }
 
-    std::multimap<std::string, std::string> eventFiles;
     std::cerr << "Matched event files:\n";
     while (std::getline(in, line))
     {
@@ -174,61 +174,72 @@ bool PerfmonEventResolver::loadPerfmonEvents(const std::string& cpuFamilyModel, 
             eventFiles.insert(std::make_pair(tokens[eventTypePos], tokens[filenamePos]));
         }
     }
-    in.close();
 
     if (eventFiles.empty())
     {
         std::cerr << "ERROR: CPU " << cpuFamilyModel << " not found in mapfile.csv\n";
         return false;
     }
+    return true;
+}
 
-    for (const auto& evfile : eventFiles)
+bool PerfmonEventResolver::loadEventFile(const std::string& eventType, const std::string& filename, const std::string& prefix)
+{
+    if (eventType != "core" && eventType != "uncore" && eventType != "uncore experimental")
+        return true;
+
+    const std::string path1 = prefix + filename;
+    const std::string path2 = prefix + filename.substr(filename.rfind('/'));
+
+    std::string path;
+    if (std::ifstream(path1).good())
+        path = path1;
+    else if (std::ifstream(path2).good())
+        path = path2;
+    else
     {
-        if (evfile.first != "core" && evfile.first != "uncore" &&
-            evfile.first != "uncore experimental")
-            continue;
+        std::cerr << "ERROR: Can't open event file at " << path1 << " or " << path2 << "\n";
+        std::cerr << "Make sure you have downloaded " << filename
+                  << " from https://raw.githubusercontent.com/intel/perfmon/main"
+                  << filename << "\n";
+        return false;
+    }
 
-        const std::string path1 = prefix + evfile.second;
-        const std::string path2 = prefix + evfile.second.substr(evfile.second.rfind('/'));
-
-        std::string path;
-        if (std::ifstream(path1).good())
-            path = path1;
-        else if (std::ifstream(path2).good())
-            path = path2;
-        else
+    try
+    {
+        if (path.find(".json") != std::string::npos)
         {
-            std::cerr << "ERROR: Can't open event file at " << path1 << " or " << path2 << "\n";
-            std::cerr << "Make sure you have downloaded " << evfile.second
-                      << " from https://raw.githubusercontent.com/intel/perfmon/main"
-                      << evfile.second << "\n";
-            return false;
-        }
+            m_jsonParsers.push_back(std::make_shared<simdjson::dom::parser>());
+            auto jsonObjects = m_jsonParsers.back()->load(path);
+            if (jsonObjects["Header"].error() != simdjson::NO_SUCH_FIELD) jsonObjects = jsonObjects["Events"];
 
-        try
-        {
-            if (path.find(".json") != std::string::npos)
+            for (simdjson::dom::object eventObj : jsonObjects)
             {
-                m_jsonParsers.push_back(std::make_shared<simdjson::dom::parser>());
-                auto jsonObjects = m_jsonParsers.back()->load(path);
-                if (jsonObjects["Header"].error() != simdjson::NO_SUCH_FIELD) jsonObjects = jsonObjects["Events"];
-
-                for (simdjson::dom::object eventObj : jsonObjects)
-                {
-                    const std::string eventName{eventObj["EventName"].get_c_str()};
-                    if (!eventName.empty()) m_eventMapJSON[eventName] = eventObj;
-                }
-            }
-            else if (path.find(".tsv") != std::string::npos)
-            {
-                if (!parseTSV(path)) return false;
+                const std::string eventName{eventObj["EventName"].get_c_str()};
+                if (!eventName.empty()) m_eventMapJSON[eventName] = eventObj;
             }
         }
-        catch (std::exception& e)
+        else if (path.find(".tsv") != std::string::npos)
         {
-            std::cerr << "Error while parsing " << path << ": " << e.what() << "\n";
-            return false;
+            if (!parseTSV(path)) return false;
         }
+    }
+    catch (std::exception& e)
+    {
+        std::cerr << "Error while parsing " << path << ": " << e.what() << "\n";
+        return false;
+    }
+    return true;
+}
+
+bool PerfmonEventResolver::loadPerfmonEvents(const std::string& cpuFamilyModel, const std::string& prefix)
+{
+    std::multimap<std::string, std::string> eventFiles;
+    if (!parseMapfile(cpuFamilyModel, prefix, eventFiles)) return false;
+
+    for (const auto& [eventType, filename] : eventFiles)
+    {
+        if (!loadEventFile(eventType, filename, prefix)) return false;
     }
 
     return !m_eventMapJSON.empty() || !m_eventMapsTSV.empty();

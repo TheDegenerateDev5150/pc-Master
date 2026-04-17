@@ -59,6 +59,9 @@ private:
 
 #ifdef PCM_SIMDJSON_AVAILABLE
     bool loadPerfmonEvents(const std::string& cpuFamilyModel, const std::string& prefix);
+    bool parseMapfile(const std::string& cpuFamilyModel, const std::string& prefix,
+                      std::multimap<std::string, std::string>& eventFiles);
+    bool loadEventFile(const std::string& eventType, const std::string& filename, const std::string& prefix);
     bool loadPMUDeclarations(const std::string& cpuFamilyModel, int stepping, const std::string& prefix);
     bool parseTSV(const std::string& path);
 
