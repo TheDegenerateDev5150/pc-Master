@@ -702,12 +702,59 @@ static void print_usage(const string& progname)
     cout << "  --metrics <path>                   => custom metrics.json file path\n";
     cout << "  --no-layout                        => flat output without section grouping\n";
     cout << "  --validate                         => validate events against perfmon and exit\n";
+    cout << "  --show-format                      => print metrics.json authoring guide and exit\n";
     cout << "\n";
     cout << " Examples:\n";
     cout << "  " << progname << " 1                  => print counters every second\n";
     cout << "  " << progname << " 0.5 -csv=test.log  => save counter values to test.log in CSV format\n";
     cout << "  " << progname << " --validate          => check which metrics are available on this CPU\n";
     cout << "\n";
+}
+
+static void print_metrics_format()
+{
+    cout << "\n metrics.json authoring guide\n";
+    cout << " ============================\n\n";
+    cout << " A metrics.json file has three top-level sections:\n";
+    cout << "   events  (optional) - local event definitions\n";
+    cout << "   metrics (required) - metric names and formulas\n";
+    cout << "   layout  (optional) - how to group metrics for display\n\n";
+
+    cout << " [events] - optional array of local event definitions\n";
+    cout << "   Local events override same-name perfmon events. Fields:\n";
+    cout << "     EventName   (required)  => lookup key referenced from metric formulas\n";
+    cout << "     Unit        (uncore)    => CHA, iMC, M2M, UPI LL, IIO, IRP, PCU, UBOX, M3UPI etc\n";
+    cout << "                                (omitted => event is treated as core)\n";
+    cout << "     EventCode   (required)  => hex, e.g. \"0x35\"\n";
+    cout << "     UMask       (required)  => hex, e.g. \"0x01\"\n";
+    cout << "     UMaskExt    (optional)  => Extension UMask\n";
+    cout << "     Counter     (required)  => counter slot(s), e.g. \"0,1,2,3\" or\n";
+    cout << "                                \"Fixed counter 0\"\n";
+    cout << "     MSRIndex    (optional)  => offcore events only\n";
+    cout << "     MSRValue    (optional)  => offcore events only\n\n";
+
+    cout << " [metrics] - required array of metric definitions\n";
+    cout << "     name        (required)  => unique metric identifier\n";
+    cout << "     formula     (required)  => arithmetic over event names\n";
+    cout << "                                operators: + - * / and parentheses;\n";
+    cout << "                                operands: event names and numeric literals\n";
+    cout << "     short_name  (optional)  => compact column header\n";
+    cout << "     aggregation (optional)  => \"socket\" (default) | \"system\" | \"stack\"\n";
+    cout << "     description (optional)  => shown in available-metrics listing\n";
+    cout << "   Event names shared across metrics are deduplicated - two metrics\n";
+    cout << "   referencing the same events cost only the unique event count.\n\n";
+
+    cout << " [layout] - optional; if omitted, all metrics render in a single flat table\n";
+    cout << "   sections  (required when layout present) - array of section objects:\n";
+    cout << "     title               (optional)  => section heading\n";
+    cout << "   Flat section:\n";
+    cout << "     metrics             (array)     => metric names in display order\n";
+    cout << "   Multi-row section:\n";
+    cout << "     rows                (array)     => row labels (e.g. [\"Total\",\"Miss\",\"Hit\"])\n";
+    cout << "     columns             (object)    => column header => [metricName per row]\n";
+    cout << "     system-wide-metrics (optional)  => metrics rendered as system rows\n\n";
+
+    cout << " See src/pmu-events/icelake-sp/metrics.json for a complete example.\n\n";
 }
 
 static std::string findMetricsPath(const std::string& programPath, const std::string& platformDir)
@@ -911,6 +958,11 @@ int mainThrows(int argc, char* argv[])
         {
             validateOnly = true;
             continue;
+        }
+        else if (check_argument_equals(*argv, {"--show-format"}))
+        {
+            print_metrics_format();
+            exit(EXIT_SUCCESS);
         }
         else if (check_argument_equals(*argv, {"--ep"}))
         {

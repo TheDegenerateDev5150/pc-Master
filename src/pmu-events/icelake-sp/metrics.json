@@ -1,14 +1,4 @@
 {
-    "events": [
-        {
-            "EventName": "EVENT_EXAMPLE",
-            "Unit": "CHA",
-            "EventCode": "0x35",
-            "UMask": "0x01",
-            "UMaskExt": "0xC87FDE",
-            "Counter": "0,1,2,3"
-        }
-    ],
     "metrics": [
         {
             "name": "PCIRdCur (B)",
