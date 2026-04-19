@@ -47,11 +47,13 @@ public:
     void collect(int delayMs);
     const MetricsConfig& getConfig() const { return m_config; }
     MetricsDisplay& getDisplay() { return m_display; }
+    int getNumGroups() const { return m_numGroups; }
     static std::string cpuModelToDir(int cpuModel);
 
 private:
     PCM* m_pcm = nullptr;
     uint32 m_numSockets = 0;
+    int m_numGroups = 1;
     MetricsConfig m_config;
     MetricsDisplay m_display;
     PerfmonEventResolver m_resolver;
@@ -230,17 +232,17 @@ bool MetricsDrivenPlatform::init(PCM* pcm, const std::string& metricsPath, const
     m_numSockets = pcm->getNumSockets();
     m_counterValues.resize(m_numSockets);
 
-    const size_t numGroups = m_pmuConfigGroups.size();
-    m_groupBeforeStates.resize(numGroups);
-    m_groupAfterStates.resize(numGroups);
-    for (size_t g = 0; g < numGroups; ++g)
+    m_numGroups = static_cast<int>(m_pmuConfigGroups.size());
+    m_groupBeforeStates.resize(m_numGroups);
+    m_groupAfterStates.resize(m_numGroups);
+    for (int g = 0; g < m_numGroups; ++g)
     {
         m_groupBeforeStates[g].resize(m_numSockets);
         m_groupAfterStates[g].resize(m_numSockets);
     }
 
-    if (numGroups > 1)
-        cerr << "INFO: Events split into " << numGroups << " measurement groups\n";
+    if (m_numGroups > 1)
+        cerr << "INFO: Events split into " << m_numGroups << " measurement groups\n";
 
     m_display.init(&m_config, m_numSockets);
     initPMUCounterDescs();
@@ -348,7 +350,7 @@ void MetricsDrivenPlatform::readCounterValues()
                                            m_groupBeforeStates[loc.groupIndex][s],
                                            m_groupAfterStates[loc.groupIndex][s]));
             }
-            m_counterValues[s][eventName] = sum;
+            m_counterValues[s][eventName] = sum * m_numGroups;
         }
     }
 }
@@ -1008,7 +1010,7 @@ int mainThrows(int argc, char* argv[])
     const auto& config = platform.getConfig();
     cerr << "Monitoring " << config.getMetrics().size() << " metrics, " << config.extractEventNames().size() << " events\n\n";
 
-    int delayMs = static_cast<int>(delay * 1000);
+    int delayMs = static_cast<int>(delay * 1000) / platform.getNumGroups();
 
     if (sysCmd) MySystem(sysCmd, sysArgv);
 
