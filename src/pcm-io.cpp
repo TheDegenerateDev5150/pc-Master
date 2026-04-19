@@ -746,6 +746,8 @@ static void print_available_metrics(const string& metricsPath, const string& pla
             if (metric.name == name)
             {
                 cout << indent << metric.name << "  =  " << metric.formula << "\n";
+                if (!metric.description.empty())
+                    cout << std::string(indent.size(), ' ') << "    " << metric.description << "\n";
                 break;
             }
     };
@@ -780,7 +782,11 @@ static void print_available_metrics(const string& metricsPath, const string& pla
     else
     {
         for (const auto& metric : metrics)
+        {
             cout << "    " << metric.name << "  =  " << metric.formula << "\n";
+            if (!metric.description.empty())
+                cout << "        " << metric.description << "\n";
+        }
         cout << "\n";
     }
 }

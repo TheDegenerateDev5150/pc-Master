@@ -468,6 +468,10 @@ bool MetricsConfig::parseMetrics(simdjson::dom::element doc)
         else
             m.aggregation = "socket";
 
+        auto desc = metricObj["description"];
+        if (!desc.error())
+            m.description = std::string{desc.get_c_str()};
+
         m_metrics.push_back(std::move(m));
     }
     parseLayout(doc);

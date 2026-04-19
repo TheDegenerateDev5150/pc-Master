@@ -334,6 +334,30 @@ TEST(MetricsConfigTest, DefaultAggregation)
     EXPECT_EQ(config.getMetrics()[0].aggregation, "socket");
 }
 
+TEST(MetricsConfigTest, MetricDescriptionWhenPresent)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(R"json({
+        "metrics": [
+            {
+                "name": "Foo",
+                "formula": "x * 2",
+                "description": "Total foo bytes, computed as x times two."
+            }
+        ]
+    })json"));
+    EXPECT_EQ(config.getMetrics()[0].description,
+              "Total foo bytes, computed as x times two.");
+}
+
+TEST(MetricsConfigTest, MetricDescriptionDefaultsEmpty)
+{
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(kTestMetricsJSON));
+    for (const auto& metric : config.getMetrics())
+        EXPECT_TRUE(metric.description.empty());
+}
+
 TEST(MetricsConfigTest, ExtractEventNames)
 {
     MetricsConfig config;

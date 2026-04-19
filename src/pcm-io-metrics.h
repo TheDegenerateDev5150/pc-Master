@@ -26,6 +26,7 @@ struct IOMetric {
     std::string formula;
     std::string short_name;
     std::string aggregation;  // "socket", "system", "stack"
+    std::string description;
 };
 
 struct LayoutSection {
