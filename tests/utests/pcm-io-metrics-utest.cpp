@@ -721,10 +721,11 @@ TEST(ValidationTest, PrintValidatedMetrics)
     ASSERT_TRUE(config.loadFromString(kTestMetricsJSON));
 
     std::ostringstream os;
-    config.printValidatedMetrics(os, [](const std::string& event) {
+    bool allValid = config.printValidatedMetrics(os, [](const std::string& event) {
         return event != "UNC_CHA_TOR_INSERTS.IO_ITOMCACHENEAR";
     });
 
+    EXPECT_FALSE(allValid);
     std::string output = os.str();
     EXPECT_NE(output.find("[OK]"), std::string::npos);
     EXPECT_NE(output.find("PCIe Rd (B)"), std::string::npos);
@@ -732,6 +733,10 @@ TEST(ValidationTest, PrintValidatedMetrics)
     EXPECT_NE(output.find("PCIe Wr (B)"), std::string::npos);
     EXPECT_NE(output.find("UNC_CHA_TOR_INSERTS.IO_ITOMCACHENEAR"), std::string::npos);
     EXPECT_NE(output.find("1 of 3 metrics valid"), std::string::npos);
+
+    std::ostringstream os2;
+    bool allValidTrue = config.printValidatedMetrics(os2, [](const std::string&) { return true; });
+    EXPECT_TRUE(allValidTrue);
 }
 
 // --- Local Events Tests ---

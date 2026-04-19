@@ -877,8 +877,7 @@ static bool printValidation(std::ostream& os, const std::string& metricsPath,
         return false;
     }
     resolver.addLocalEvents(config.getLocalEvents());
-    config.printValidatedMetrics(os, [&resolver](const std::string& event) { return resolver.isEvent(event); });
-    return true;
+    return config.printValidatedMetrics(os, [&resolver](const std::string& event) { return resolver.isEvent(event); });
 }
 
 PCM_MAIN_NOTHROW;

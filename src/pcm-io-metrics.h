@@ -114,7 +114,7 @@ public:
     const std::vector<std::pair<std::string, LocalEvent>>& getLocalEvents() const { return m_localEvents; }
     std::set<std::string> extractEventNames() const;
     ValidationResult validateEvents(const EventValidator& validator) const;
-    void printValidatedMetrics(std::ostream& os, const EventValidator& validator) const;
+    bool printValidatedMetrics(std::ostream& os, const EventValidator& validator) const;
 
 private:
     std::vector<IOMetric> m_metrics;

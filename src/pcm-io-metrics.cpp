@@ -619,7 +619,7 @@ ValidationResult MetricsConfig::validateEvents(const EventValidator& validator) 
     return result;
 }
 
-void MetricsConfig::printValidatedMetrics(std::ostream& os, const EventValidator& validator) const
+bool MetricsConfig::printValidatedMetrics(std::ostream& os, const EventValidator& validator) const
 {
     auto result = validateEvents(validator);
     size_t validCount = 0;
@@ -641,6 +641,7 @@ void MetricsConfig::printValidatedMetrics(std::ostream& os, const EventValidator
         }
     }
     os << "\n" << validCount << " of " << result.metrics.size() << " metrics valid\n";
+    return result.allValid();
 }
 
 // --- CounterConstraintGrouper ---
