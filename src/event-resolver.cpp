@@ -27,6 +27,9 @@ std::string PerfmonEventResolver::findPerfmonPath(const std::string& programPath
     candidate = getInstallPathPrefix() + "perfmon";
     if (std::ifstream(candidate + "/" + marker).good()) return candidate;
 
+    // 3. Current working directory (matches historical ".")
+    if (std::ifstream(marker).good()) return ".";
+
     return "";
 }
 
