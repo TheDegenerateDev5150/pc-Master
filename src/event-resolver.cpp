@@ -190,15 +190,18 @@ bool PerfmonEventResolver::loadEventFile(const std::string& eventType, const std
 
     const std::string path1 = prefix + filename;
     const std::string path2 = prefix + filename.substr(filename.rfind('/'));
+    const std::string path3 = getInstallPathPrefix() + "perfmon" + filename;
 
     std::string path;
     if (std::ifstream(path1).good())
         path = path1;
     else if (std::ifstream(path2).good())
         path = path2;
+    else if (std::ifstream(path3).good())
+        path = path3;
     else
     {
-        std::cerr << "ERROR: Can't open event file at " << path1 << " or " << path2 << "\n";
+        std::cerr << "ERROR: Can't open event file at " << path1 << " or " << path2 << " or " << path3 << "\n";
         std::cerr << "Make sure you have downloaded " << filename
                   << " from https://raw.githubusercontent.com/intel/perfmon/main"
                   << filename << "\n";
