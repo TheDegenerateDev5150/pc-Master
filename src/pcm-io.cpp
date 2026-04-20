@@ -646,49 +646,56 @@ void MetricsDisplay::displayFlatMode(std::ostream& os) const
     FormulaEvaluator evaluator;
     const auto& metrics = m_config->getMetrics();
 
-    std::vector<std::string> fullHeaders = {"Skt"};
     std::vector<size_t> socketMetricIndices;
+    std::vector<size_t> systemMetricIndices;
     for (size_t i = 0; i < metrics.size(); ++i)
     {
-        if (metrics[i].aggregation != "system")
-        {
-            fullHeaders.push_back(metricDisplayName(metrics[i]));
+        if (metrics[i].aggregation == "system")
+            systemMetricIndices.push_back(i);
+        else
             socketMetricIndices.push_back(i);
-        }
+    }
+
+    const bool hasSocketMetrics = !socketMetricIndices.empty();
+    const bool hasSystemMetrics = !systemMetricIndices.empty();
+
+    std::vector<std::string> fullHeaders;
+    if (hasSocketMetrics)
+    {
+        fullHeaders.push_back("Skt");
+        for (size_t idx : socketMetricIndices)
+            fullHeaders.push_back(metricDisplayName(metrics[idx]));
     }
 
     TableRenderer table;
     table.setHeaders(fullHeaders);
 
-    for (uint32 s = 0; s < m_numSockets; ++s)
+    if (hasSocketMetrics)
     {
-        std::vector<std::string> row;
-        row.push_back(std::to_string(s));
-        for (size_t idx : socketMetricIndices)
+        for (uint32 s = 0; s < m_numSockets; ++s)
         {
-            double val = evaluator.evaluate(metrics[idx].formula, (*m_counterValues)[s]);
-            row.push_back(formatValue(val));
+            std::vector<std::string> row;
+            row.push_back(std::to_string(s));
+            for (size_t idx : socketMetricIndices)
+            {
+                double val = evaluator.evaluate(metrics[idx].formula, (*m_counterValues)[s]);
+                row.push_back(formatValue(val));
+            }
+            table.addRow(row);
         }
-        table.addRow(row);
     }
 
-    auto systemValues = getSystemCounterValues();
-    bool hasSystem = false;
-    std::vector<std::string> sysRow;
-    sysRow.push_back("*");
-    for (size_t i = 0; i < metrics.size(); ++i)
+    if (hasSystemMetrics)
     {
-        if (metrics[i].aggregation == "system")
+        auto systemValues = getSystemCounterValues();
+        std::vector<std::pair<std::string,std::string>> sysSection;
+        for (size_t idx : systemMetricIndices)
         {
-            double val = evaluator.evaluate(metrics[i].formula, systemValues);
-            sysRow.push_back(formatValue(val));
-            hasSystem = true;
+            std::string name = metricDisplayName(metrics[idx]);
+            double val = evaluator.evaluate(metrics[idx].formula, systemValues);
+            sysSection.emplace_back(name, formatValue(val));
         }
-    }
-    if (hasSystem)
-    {
-        table.addSectionHeader("System Total");
-        table.addRow(sysRow);
+        table.addSystemSection("System Wide", sysSection);
     }
 
     table.render(os);
