@@ -405,6 +405,11 @@ void MetricsDisplay::printHeader(std::ostream& os, bool csv) const
         if (metric.aggregation == "system") continue;
         os << "," << metricDisplayName(metric);
     }
+    for (const auto& metric : metrics)
+    {
+        if (metric.aggregation != "system") continue;
+        os << "," << metricDisplayName(metric);
+    }
     os << "\n";
 }
 
@@ -432,6 +437,14 @@ void MetricsDisplay::displayCsv(std::ostream& os) const
     FormulaEvaluator evaluator;
     const auto& metrics = m_config->getMetrics();
 
+    size_t numSocketMetrics = 0;
+    size_t numSystemMetrics = 0;
+    for (const auto& m : metrics)
+    {
+        if (m.aggregation == "system") ++numSystemMetrics;
+        else ++numSocketMetrics;
+    }
+
     for (uint32 s = 0; s < m_numSockets; ++s)
     {
         os << s;
@@ -441,25 +454,24 @@ void MetricsDisplay::displayCsv(std::ostream& os) const
             double val = evaluator.evaluate(m.formula, (*m_counterValues)[s]);
             os << "," << static_cast<uint64>(val);
         }
+        for (size_t i = 0; i < numSystemMetrics; ++i)
+            os << ",";
         os << "\n";
     }
 
+    if (numSystemMetrics == 0) return;
+
     auto systemValues = getSystemCounterValues();
-    bool hasSystem = false;
+    os << "*";
+    for (size_t i = 0; i < numSocketMetrics; ++i)
+        os << ",";
     for (const auto& m : metrics)
     {
-        if (m.aggregation == "system")
-        {
-            if (!hasSystem)
-            {
-                os << "*";
-                hasSystem = true;
-            }
-            double val = evaluator.evaluate(m.formula, systemValues);
-            os << "," << static_cast<uint64>(val);
-        }
+        if (m.aggregation != "system") continue;
+        double val = evaluator.evaluate(m.formula, systemValues);
+        os << "," << static_cast<uint64>(val);
     }
-    if (hasSystem) os << "\n";
+    os << "\n";
 }
 
 void MetricsDisplay::displayLayoutMode(std::ostream& os) const
