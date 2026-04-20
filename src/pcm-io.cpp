@@ -717,7 +717,7 @@ static void print_usage(const string& progname)
     cout << "  -csv[=file.csv] | /csv[=file.csv]  => output compact CSV format to screen or\n"
          << "                                        to a file, in case filename is provided\n";
     cout << "  -i[=number] | /i[=number]          => allow to determine number of iterations\n";
-    cout << "  --ep <path>                        => event file prefix (perfmon directory path)\n";
+    cout << "  -ep <path> | /ep <path>            => event file prefix (perfmon directory path)\n";
     cout << "  --metrics <path>                   => custom metrics.json file path\n";
     cout << "  --no-layout                        => flat output without section grouping\n";
     cout << "  --validate                         => validate events against perfmon and exit\n";
@@ -982,13 +982,13 @@ int mainThrows(int argc, char* argv[])
             print_metrics_format();
             exit(EXIT_SUCCESS);
         }
-        else if (check_argument_equals(*argv, {"--ep"}))
+        else if (check_argument_equals(*argv, {"-ep", "/ep"}))
         {
             argv++;
             argc--;
             if (argc <= 0)
             {
-                cerr << "ERROR: no parameter provided for option --ep\n";
+                cerr << "ERROR: no parameter provided for option -ep\n";
                 exit(EXIT_FAILURE);
             }
             perfmonPath = *argv;
@@ -1035,7 +1035,7 @@ int mainThrows(int argc, char* argv[])
     if (perfmonPath.empty() && !showHelp)
     {
         cerr << "ERROR: Could not find perfmon directory (mapfile.csv not found).\n";
-        cerr << "Use --ep <path> to specify the perfmon directory location.\n";
+        cerr << "Use -ep <path> to specify the perfmon directory location.\n";
         exit(EXIT_FAILURE);
     }
 

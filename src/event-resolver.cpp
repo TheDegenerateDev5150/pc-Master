@@ -128,7 +128,7 @@ bool PerfmonEventResolver::parseMapfile(const std::string& cpuFamilyModel, const
     if (!in.is_open())
     {
         std::cerr << "ERROR: File " << mapfilePath << " can't be opened.\n";
-        std::cerr << "       use --ep <perfmon_directory> option to specify the perfmon directory,\n";
+        std::cerr << "       use -ep <perfmon_directory> option to specify the perfmon directory,\n";
         std::cerr << "       or run 'git clone https://github.com/intel/perfmon' to download the perfmon event repository\n";
         return false;
     }
