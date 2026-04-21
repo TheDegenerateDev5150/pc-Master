@@ -4,6 +4,7 @@
 #include "pcm-io-metrics.h"
 #include <gtest/gtest.h>
 #include <fstream>
+#include <cstdio>
 
 using namespace pcm;
 

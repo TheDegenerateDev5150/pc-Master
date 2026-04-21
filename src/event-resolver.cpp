@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-// Copyright (c) 2025, Intel Corporation
+// Copyright (c) 2026, Intel Corporation
 
 #include "event-resolver.h"
 #include "utils.h"
@@ -27,10 +27,7 @@ std::string PerfmonEventResolver::findPerfmonPath(const std::string& programPath
     candidate = getInstallPathPrefix() + "perfmon";
     if (std::ifstream(candidate + "/" + marker).good()) return candidate;
 
-    // 3. Current working directory (matches historical ".")
-    if (std::ifstream(marker).good()) return ".";
-
-    return "";
+    return ".";
 }
 
 const std::map<std::string, std::string> PerfmonEventResolver::s_pmuNameMap = {
@@ -165,9 +162,12 @@ bool PerfmonEventResolver::parseMapfile(const std::string& cpuFamilyModel, const
     while (std::getline(in, line))
     {
         auto tokens = split(line, ',');
-        assert(fmsPos < static_cast<int32>(tokens.size()));
-        assert(filenamePos < static_cast<int32>(tokens.size()));
-        assert(eventTypePos < static_cast<int32>(tokens.size()));
+        const int32 tokenCount = static_cast<int32>(tokens.size());
+        if (fmsPos >= tokenCount || filenamePos >= tokenCount || eventTypePos >= tokenCount)
+        {
+            std::cerr << "WARNING: skipping malformed mapfile.csv line: " << line << "\n";
+            continue;
+        }
 
         std::regex fmsRegex(tokens[fmsPos]);
         std::cmatch fmsMatch;

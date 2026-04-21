@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026, Intel Corporation
 
+// written by Alexander Antonov
+
 #include "cpucounters.h"
 #include "pcm-io-metrics.h"
 #include "event-resolver.h"
@@ -38,6 +40,7 @@ private:
     bool hasLayoutSections() const;
     std::unordered_map<std::string, double> getSystemCounterValues() const;
     static std::string formatValue(double value);
+    static std::string formatCsvValue(double value);
     static std::string metricDisplayName(const IOMetric& metric);
 };
 
@@ -389,6 +392,18 @@ std::string MetricsDisplay::formatValue(double value)
     return oss.str();
 }
 
+// Raw CSV value: integer when representable as uint64, otherwise fixed-point.
+// Guards against UB from casting negative or out-of-range doubles to uint64.
+std::string MetricsDisplay::formatCsvValue(double value)
+{
+    if (value >= 0.0 && value <= static_cast<double>(UINT64_MAX))
+        return std::to_string(static_cast<uint64>(value));
+
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(2) << value;
+    return oss.str();
+}
+
 std::string MetricsDisplay::metricDisplayName(const IOMetric& metric)
 {
     return metric.short_name.empty() ? metric.name : metric.short_name;
@@ -452,7 +467,7 @@ void MetricsDisplay::displayCsv(std::ostream& os) const
         {
             if (m.aggregation == "system") continue;
             double val = evaluator.evaluate(m.formula, (*m_counterValues)[s]);
-            os << "," << static_cast<uint64>(val);
+            os << "," << formatCsvValue(val);
         }
         for (size_t i = 0; i < numSystemMetrics; ++i)
             os << ",";
@@ -469,7 +484,7 @@ void MetricsDisplay::displayCsv(std::ostream& os) const
     {
         if (m.aggregation != "system") continue;
         double val = evaluator.evaluate(m.formula, systemValues);
-        os << "," << static_cast<uint64>(val);
+        os << "," << formatCsvValue(val);
     }
     os << "\n";
 }

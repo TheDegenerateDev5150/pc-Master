@@ -236,9 +236,11 @@ void TableRenderer::render(std::ostream& os) const
             os << BOX.horizontal;
         os << BOX.top_right << "\n";
 
-        // Section title row
+        // Section title row (pad clamped to 0 if title exceeds inner width,
+        // so the closing border still renders instead of underflowing).
         os << BOX.vertical << " " << m_rows[0].sectionTitle;
-        size_t pad = innerWidth - 1 - m_rows[0].sectionTitle.size();
+        const size_t titleSize = m_rows[0].sectionTitle.size();
+        size_t pad = (innerWidth > titleSize + 1) ? innerWidth - 1 - titleSize : 0;
         for (size_t j = 0; j < pad; ++j)
             os << " ";
         os << BOX.vertical << "\n";
@@ -287,7 +289,8 @@ void TableRenderer::render(std::ostream& os) const
 
             // Section title row (left-aligned, spans full width)
             os << BOX.vertical << " " << row.sectionTitle;
-            size_t pad = innerWidth - 1 - row.sectionTitle.size();
+            const size_t titleSize = row.sectionTitle.size();
+            size_t pad = (innerWidth > titleSize + 1) ? innerWidth - 1 - titleSize : 0;
             for (size_t j = 0; j < pad; ++j)
                 os << " ";
             os << BOX.vertical << "\n";
@@ -300,29 +303,34 @@ void TableRenderer::render(std::ostream& os) const
         else if (row.isSystemSection)
         {
             needDataSeparator = false;
-            size_t N = row.systemPairs.size();
-            if (N == 0) continue;
+            size_t numColumns = row.systemPairs.size();
+            if (numColumns == 0) continue;
 
             // Transition separator: closes socket columns with tee_up (┴)
             renderLine(os, BOX.tee_right, BOX.tee_up, BOX.tee_left, colWidths);
 
             // Title row (left-aligned)
             os << BOX.vertical << " " << row.sectionTitle;
-            size_t titlePad = innerWidth - 1 - row.sectionTitle.size();
+            const size_t titleSize = row.sectionTitle.size();
+            size_t titlePad = (innerWidth > titleSize + 1) ? innerWidth - 1 - titleSize : 0;
             for (size_t j = 0; j < titlePad; ++j) os << " ";
             os << BOX.vertical << "\n";
 
-            // Compute N equal column widths
-            size_t innerSpace = innerWidth - (N - 1);
-            std::vector<size_t> wideColWidths(N, innerSpace / N);
-            for (size_t r = 0; r < innerSpace % N; ++r) wideColWidths[r]++;
+            // Compute equal column widths across all system metrics.
+            // Guard against underflow when the parent table is too narrow to fit
+            // all system columns: fall back to 1-char-per-column so the table stays
+            // visible (borders may misalign with the socket section, but no loop).
+            const size_t separators = numColumns - 1;
+            size_t innerSpace = (innerWidth > separators) ? innerWidth - separators : numColumns;
+            std::vector<size_t> wideColWidths(numColumns, innerSpace / numColumns);
+            for (size_t r = 0; r < innerSpace % numColumns; ++r) wideColWidths[r]++;
 
-            // Opening N-column separator (┬)
+            // Opening multi-column separator (┬)
             renderLine(os, BOX.tee_right, BOX.tee_down, BOX.tee_left, wideColWidths);
 
             // Name row (centered)
             os << BOX.vertical;
-            for (size_t i = 0; i < N; ++i)
+            for (size_t i = 0; i < numColumns; ++i)
             {
                 renderCenteredText(os, row.systemPairs[i].first, wideColWidths[i]);
                 os << BOX.vertical;
@@ -334,7 +342,7 @@ void TableRenderer::render(std::ostream& os) const
 
             // Value row (centered)
             os << BOX.vertical;
-            for (size_t i = 0; i < N; ++i)
+            for (size_t i = 0; i < numColumns; ++i)
             {
                 renderCenteredText(os, row.systemPairs[i].second, wideColWidths[i]);
                 os << BOX.vertical;
