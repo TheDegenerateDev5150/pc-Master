@@ -72,6 +72,14 @@ public:
     void render(std::ostream& os) const;
     std::string renderToString() const;
 
+    // Renders a standalone titled box with a two-row centered table
+    // (metric names row + values row). Used for sections that contain
+    // only system-aggregated metrics, which have no per-socket rows.
+    static void renderStandaloneSystemSection(
+        std::ostream& os,
+        const std::string& title,
+        const std::vector<std::pair<std::string,std::string>>& pairs);
+
 private:
     struct Row {
         bool isSectionHeader = false;
@@ -113,6 +121,11 @@ public:
     const std::vector<LayoutSection>& getLayout() const { return m_layout; }
     const std::vector<std::pair<std::string, LocalEvent>>& getLocalEvents() const { return m_localEvents; }
     std::set<std::string> extractEventNames() const;
+    // Returns the set of metric names referenced by any layout section.
+    // Walks flat `metrics`, multi-row `columns[*].second`, and `systemWideMetrics`.
+    // When `layout` is absent in JSON, generateFlatLayout() populates m_layout
+    // with every metric name, so this returns all metrics in that case.
+    std::set<std::string> getLayoutMetricNames() const;
     ValidationResult validateEvents(const EventValidator& validator) const;
     bool printValidatedMetrics(std::ostream& os, const EventValidator& validator) const;
 

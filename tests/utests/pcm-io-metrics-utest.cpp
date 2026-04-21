@@ -538,6 +538,54 @@ TEST_F(TableRendererTest, RenderWithSystemSection)
     EXPECT_GT(result.size(), 0u);
 }
 
+TEST(TableRendererStandaloneTest, RenderStandaloneSystemSectionWithTitle)
+{
+    std::ostringstream oss;
+    TableRenderer::renderStandaloneSystemSection(oss, "System Only",
+        {{"Total Read (B)", "0"}, {"Total Write (B)", "51"}});
+
+    // colW: max(14,1)+2=16, max(15,2)+2=17; innerWidth = 16+17+1 = 34
+    // Title " System Only" -> pad = 34 - 1 - 11 = 22
+    // Name centering: "Total Read (B)" in 16 => 1 left, 1 right
+    //                 "Total Write (B)" in 17 => 1 left, 1 right
+    // Value centering: "0" in 16 => 7 left, 8 right
+    //                  "51" in 17 => 7 left, 8 right
+    std::string expected =
+        std::string(B_TL) + hline(34) + B_TR + "\n" +
+        B_V + " System Only" + std::string(22, ' ') + B_V + "\n" +
+        B_ML + hline(16) + B_TD + hline(17) + B_MR + "\n" +
+        B_V + " Total Read (B) " + B_V + " Total Write (B) " + B_V + "\n" +
+        B_ML + hline(16) + B_X + hline(17) + B_MR + "\n" +
+        B_V + "       0        " + B_V + "       51        " + B_V + "\n" +
+        B_BL + hline(16) + B_TU + hline(17) + B_BR + "\n";
+
+    EXPECT_EQ(oss.str(), expected);
+}
+
+TEST(TableRendererStandaloneTest, RenderStandaloneSystemSectionNoTitle)
+{
+    std::ostringstream oss;
+    TableRenderer::renderStandaloneSystemSection(oss, "",
+        {{"Total Read (B)", "0"}, {"Total Write (B)", "51"}});
+
+    // Same column widths as with-title case; top border has column divider.
+    std::string expected =
+        std::string(B_TL) + hline(16) + B_TD + hline(17) + B_TR + "\n" +
+        B_V + " Total Read (B) " + B_V + " Total Write (B) " + B_V + "\n" +
+        B_ML + hline(16) + B_X + hline(17) + B_MR + "\n" +
+        B_V + "       0        " + B_V + "       51        " + B_V + "\n" +
+        B_BL + hline(16) + B_TU + hline(17) + B_BR + "\n";
+
+    EXPECT_EQ(oss.str(), expected);
+}
+
+TEST(TableRendererStandaloneTest, RenderStandaloneSystemSectionEmpty)
+{
+    std::ostringstream oss;
+    TableRenderer::renderStandaloneSystemSection(oss, "Empty", {});
+    EXPECT_EQ(oss.str(), "");
+}
+
 // --- Layout Tests ---
 
 static const char* kLayoutMetricsJSON = R"json({
@@ -654,6 +702,78 @@ TEST(LayoutTest, LayoutMalformedSection)
     EXPECT_EQ(layout[1].title, "Valid");
     ASSERT_EQ(layout[1].metrics.size(), 1u);
     EXPECT_EQ(layout[1].metrics[0], "A");
+}
+
+TEST(LayoutTest, GetLayoutMetricNamesFlatDedup)
+{
+    // Two flat sections share "PCIe Rd (B)" — must dedupe.
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(R"json({
+        "metrics": [
+            { "name": "PCIe Rd (B)", "formula": "A", "aggregation": "socket" },
+            { "name": "PCIe Wr (B)", "formula": "B", "aggregation": "socket" },
+            { "name": "Total BW (B)", "formula": "A+B", "aggregation": "system" }
+        ],
+        "layout": {
+            "sections": [
+                { "title": "Focus", "metrics": ["PCIe Rd (B)", "Total BW (B)"] },
+                { "metrics": ["PCIe Rd (B)", "PCIe Wr (B)"] }
+            ]
+        }
+    })json"));
+
+    auto names = config.getLayoutMetricNames();
+    EXPECT_EQ(names.size(), 3u);
+    EXPECT_TRUE(names.count("PCIe Rd (B)"));
+    EXPECT_TRUE(names.count("PCIe Wr (B)"));
+    EXPECT_TRUE(names.count("Total BW (B)"));
+}
+
+TEST(LayoutTest, GetLayoutMetricNamesMultiRow)
+{
+    // Must collect names from columns AND system-wide-metrics.
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(R"json({
+        "metrics": [
+            {"name":"PCIRdCur",       "formula":"A", "aggregation":"socket"},
+            {"name":"PCIRdCur Miss",  "formula":"B", "aggregation":"socket"},
+            {"name":"ItoM",           "formula":"D", "aggregation":"socket"},
+            {"name":"Total Read (B)", "formula":"A+B","aggregation":"system"}
+        ],
+        "layout": {
+            "sections": [
+                {
+                    "rows": ["Total", "Miss"],
+                    "columns": {
+                        "PCIRdCur Events": ["PCIRdCur", "PCIRdCur Miss"],
+                        "ItoM Events": ["ItoM"]
+                    },
+                    "system-wide-metrics": ["Total Read (B)"]
+                }
+            ]
+        }
+    })json"));
+
+    auto names = config.getLayoutMetricNames();
+    EXPECT_EQ(names.size(), 4u);
+    EXPECT_TRUE(names.count("PCIRdCur"));
+    EXPECT_TRUE(names.count("PCIRdCur Miss"));
+    EXPECT_TRUE(names.count("ItoM"));
+    EXPECT_TRUE(names.count("Total Read (B)"));
+}
+
+TEST(LayoutTest, GetLayoutMetricNamesNoLayoutReturnsAll)
+{
+    // When layout is omitted, generateFlatLayout() populates every metric
+    // so the helper returns all of them.
+    MetricsConfig config;
+    ASSERT_TRUE(config.loadFromString(kTestMetricsJSON));
+
+    auto names = config.getLayoutMetricNames();
+    EXPECT_EQ(names.size(), 3u);
+    EXPECT_TRUE(names.count("PCIe Rd (B)"));
+    EXPECT_TRUE(names.count("PCIe Wr (B)"));
+    EXPECT_TRUE(names.count("Total BW (B)"));
 }
 
 // --- Validation Tests ---

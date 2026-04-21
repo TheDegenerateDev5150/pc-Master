@@ -388,6 +388,69 @@ std::string TableRenderer::renderToString() const
     return oss.str();
 }
 
+void TableRenderer::renderStandaloneSystemSection(
+    std::ostream& os,
+    const std::string& title,
+    const std::vector<std::pair<std::string,std::string>>& pairs)
+{
+    const size_t numCols = pairs.size();
+    if (numCols == 0) return;
+
+    const size_t padding = 2;
+    std::vector<size_t> colWidths(numCols, 0);
+    for (size_t i = 0; i < numCols; ++i)
+        colWidths[i] = std::max(pairs[i].first.size(), pairs[i].second.size()) + padding;
+
+    size_t innerWidth = numCols - 1;  // column separators
+    for (auto w : colWidths) innerWidth += w;
+
+    if (!title.empty())
+    {
+        // Full-width top border
+        os << BOX.top_left;
+        for (size_t j = 0; j < innerWidth; ++j) os << BOX.horizontal;
+        os << BOX.top_right << "\n";
+
+        // Title row (left-aligned, clamp pad to 0 on overflow)
+        os << BOX.vertical << " " << title;
+        size_t pad = (innerWidth > title.size() + 1) ? innerWidth - 1 - title.size() : 0;
+        for (size_t j = 0; j < pad; ++j) os << " ";
+        os << BOX.vertical << "\n";
+
+        // Separator: ├───┬───┤
+        renderLine(os, BOX.tee_right, BOX.tee_down, BOX.tee_left, colWidths);
+    }
+    else
+    {
+        // Top border with column dividers: ┌───┬───┐
+        renderLine(os, BOX.top_left, BOX.tee_down, BOX.top_right, colWidths);
+    }
+
+    // Name row (centered)
+    os << BOX.vertical;
+    for (size_t i = 0; i < numCols; ++i)
+    {
+        renderCenteredText(os, pairs[i].first, colWidths[i]);
+        os << BOX.vertical;
+    }
+    os << "\n";
+
+    // Inner separator: ├───┼───┤
+    renderLine(os, BOX.tee_right, BOX.cross, BOX.tee_left, colWidths);
+
+    // Value row (centered)
+    os << BOX.vertical;
+    for (size_t i = 0; i < numCols; ++i)
+    {
+        renderCenteredText(os, pairs[i].second, colWidths[i]);
+        os << BOX.vertical;
+    }
+    os << "\n";
+
+    // Bottom border: └───┴───┘
+    renderLine(os, BOX.bottom_left, BOX.tee_up, BOX.bottom_right, colWidths);
+}
+
 // --- MetricsConfig ---
 
 #ifdef PCM_SIMDJSON_AVAILABLE
@@ -595,6 +658,19 @@ std::set<std::string> MetricsConfig::extractEventNames() const
         allEvents.insert(vars.begin(), vars.end());
     }
     return allEvents;
+}
+
+std::set<std::string> MetricsConfig::getLayoutMetricNames() const
+{
+    std::set<std::string> names;
+    for (const auto& section : m_layout)
+    {
+        for (const auto& n : section.metrics) names.insert(n);
+        for (const auto& col : section.columns)
+            for (const auto& n : col.second) names.insert(n);
+        for (const auto& n : section.systemWideMetrics) names.insert(n);
+    }
+    return names;
 }
 
 bool ValidationResult::allValid() const

@@ -414,15 +414,18 @@ void MetricsDisplay::printHeader(std::ostream& os, bool csv) const
     if (!csv) return;
 
     const auto& metrics = m_config->getMetrics();
+    const auto allowed = m_config->getLayoutMetricNames();
     os << "Skt";
     for (const auto& metric : metrics)
     {
         if (metric.aggregation == "system") continue;
+        if (!allowed.count(metric.name)) continue;
         os << "," << metricDisplayName(metric);
     }
     for (const auto& metric : metrics)
     {
         if (metric.aggregation != "system") continue;
+        if (!allowed.count(metric.name)) continue;
         os << "," << metricDisplayName(metric);
     }
     os << "\n";
@@ -433,7 +436,7 @@ bool MetricsDisplay::hasLayoutSections() const
     const auto& layout = m_config->getLayout();
     if (layout.size() > 1) return true;
     for (const auto& s : layout)
-        if (s.isMultiRow()) return true;
+        if (s.isMultiRow() || !s.title.empty()) return true;
     return false;
 }
 
@@ -451,27 +454,33 @@ void MetricsDisplay::displayCsv(std::ostream& os) const
 {
     FormulaEvaluator evaluator;
     const auto& metrics = m_config->getMetrics();
+    const auto allowed = m_config->getLayoutMetricNames();
 
     size_t numSocketMetrics = 0;
     size_t numSystemMetrics = 0;
     for (const auto& m : metrics)
     {
+        if (!allowed.count(m.name)) continue;
         if (m.aggregation == "system") ++numSystemMetrics;
         else ++numSocketMetrics;
     }
 
-    for (uint32 s = 0; s < m_numSockets; ++s)
+    if (numSocketMetrics > 0)
     {
-        os << s;
-        for (const auto& m : metrics)
+        for (uint32 s = 0; s < m_numSockets; ++s)
         {
-            if (m.aggregation == "system") continue;
-            double val = evaluator.evaluate(m.formula, (*m_counterValues)[s]);
-            os << "," << formatCsvValue(val);
+            os << s;
+            for (const auto& m : metrics)
+            {
+                if (m.aggregation == "system") continue;
+                if (!allowed.count(m.name)) continue;
+                double val = evaluator.evaluate(m.formula, (*m_counterValues)[s]);
+                os << "," << formatCsvValue(val);
+            }
+            for (size_t i = 0; i < numSystemMetrics; ++i)
+                os << ",";
+            os << "\n";
         }
-        for (size_t i = 0; i < numSystemMetrics; ++i)
-            os << ",";
-        os << "\n";
     }
 
     if (numSystemMetrics == 0) return;
@@ -483,6 +492,7 @@ void MetricsDisplay::displayCsv(std::ostream& os) const
     for (const auto& m : metrics)
     {
         if (m.aggregation != "system") continue;
+        if (!allowed.count(m.name)) continue;
         double val = evaluator.evaluate(m.formula, systemValues);
         os << "," << formatCsvValue(val);
     }
@@ -531,6 +541,21 @@ void MetricsDisplay::displayLayoutMode(std::ostream& os) const
         }
 
         if (headers.empty() && sysMetricIdxs.empty()) continue;
+
+        if (!hasSocketMetrics && hasSystemMetrics)
+        {
+            auto systemValues = getSystemCounterValues();
+            std::vector<std::pair<std::string,std::string>> sysSection;
+            for (size_t idx : sysMetricIdxs)
+            {
+                std::string name = metricDisplayName(metrics[idx]);
+                double val = evaluator.evaluate(metrics[idx].formula, systemValues);
+                sysSection.emplace_back(name, formatValue(val));
+            }
+            TableRenderer::renderStandaloneSystemSection(os, section.title, sysSection);
+            os << "\n";
+            continue;
+        }
 
         std::vector<std::string> fullHeaders;
         if (hasSocketMetrics)
@@ -673,6 +698,20 @@ void MetricsDisplay::displayFlatMode(std::ostream& os) const
 
     const bool hasSocketMetrics = !socketMetricIndices.empty();
     const bool hasSystemMetrics = !systemMetricIndices.empty();
+
+    if (!hasSocketMetrics && hasSystemMetrics)
+    {
+        auto systemValues = getSystemCounterValues();
+        std::vector<std::pair<std::string,std::string>> sysSection;
+        for (size_t idx : systemMetricIndices)
+        {
+            std::string name = metricDisplayName(metrics[idx]);
+            double val = evaluator.evaluate(metrics[idx].formula, systemValues);
+            sysSection.emplace_back(name, formatValue(val));
+        }
+        TableRenderer::renderStandaloneSystemSection(os, "", sysSection);
+        return;
+    }
 
     std::vector<std::string> fullHeaders;
     if (hasSocketMetrics)
