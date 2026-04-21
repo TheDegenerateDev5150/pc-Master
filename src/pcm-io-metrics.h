@@ -11,15 +11,14 @@
 #include <sstream>
 #include <ostream>
 
+#include "event-resolver.h"
+
 #ifdef PCM_SIMDJSON_AVAILABLE
 #include <memory>
 #include "simdjson.h"
 #endif
 
 namespace pcm {
-
-// Forward-declared in event-resolver.h; redeclared here so pcm-io-metrics.h is self-contained
-using LocalEvent = std::unordered_map<std::string, std::string>;
 
 struct IOMetric {
     std::string name;

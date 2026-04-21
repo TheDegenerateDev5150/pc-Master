@@ -136,7 +136,7 @@ std::string MetricsDrivenPlatform::cpuModelToDir(int cpuModel)
 //
 // Events without a Counter field are rejected (local events in metrics.json
 // must explicitly declare it). Fixed-counter events go to the fixed vector.
-// Register events (mmio, pcicfg, etc.) bypass slot constraints entirely.
+// Register events (mmio, pcicfg, pmt, tpmi) are rejected — not yet supported.
 //
 bool MetricsDrivenPlatform::init(PCM* pcm, const std::string& metricsPath, const std::string& eventPrefix)
 {
@@ -179,13 +179,9 @@ bool MetricsDrivenPlatform::init(PCM* pcm, const std::string& metricsPath, const
 
         if (isRegisterEvent(pmuName))
         {
-            if (m_pmuConfigGroups.empty())
-                m_pmuConfigGroups.emplace_back();
-            auto& grp = m_pmuConfigGroups[0];
-            size_t idx = grp[pmuName].programmable.size();
-            grp[pmuName].programmable.push_back(config);
-            m_eventLocations[eventName] = {0, pmuName, idx};
-            continue;
+            cerr << "ERROR: Register-based events (mmio/pcicfg/pmt/tpmi) are not yet supported in pcm-io. "
+                 << "Event: " << eventName << " (PMU: " << pmuName << ")\n";
+            return false;
         }
 
         std::string counterStr = m_resolver.getField(eventName, "Counter");
@@ -353,6 +349,9 @@ void MetricsDrivenPlatform::readCounterValues()
                                            m_groupBeforeStates[loc.groupIndex][s],
                                            m_groupAfterStates[loc.groupIndex][s]));
             }
+            // Rescale by group count to approximate a full-interval count: each group
+            // only observed delay/numGroups of wall time. Assumes the event's rate is
+            // steady across the interval.
             m_counterValues[s][eventName] = sum * m_numGroups;
         }
     }

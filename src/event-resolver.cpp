@@ -158,7 +158,7 @@ bool PerfmonEventResolver::parseMapfile(const std::string& cpuFamilyModel, const
         return false;
     }
 
-    std::cerr << "Matched event files:\n";
+    bool headerPrinted = false;
     while (std::getline(in, line))
     {
         auto tokens = split(line, ',');
@@ -173,6 +173,11 @@ bool PerfmonEventResolver::parseMapfile(const std::string& cpuFamilyModel, const
         std::cmatch fmsMatch;
         if (std::regex_search(cpuFamilyModel.c_str(), fmsMatch, fmsRegex))
         {
+            if (!headerPrinted)
+            {
+                std::cerr << "Matched event files:\n";
+                headerPrinted = true;
+            }
             std::cerr << tokens[fmsPos] << " " << tokens[eventTypePos] << " " << tokens[filenamePos] << "\n";
             eventFiles.insert(std::make_pair(tokens[eventTypePos], tokens[filenamePos]));
         }

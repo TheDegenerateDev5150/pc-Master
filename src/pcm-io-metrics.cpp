@@ -16,7 +16,7 @@ struct FormulaParser {
 
     void skipWS()
     {
-        while (pos < input.size() && input[pos] == ' ')
+        while (pos < input.size() && std::isspace(static_cast<unsigned char>(input[pos])))
             ++pos;
     }
 
