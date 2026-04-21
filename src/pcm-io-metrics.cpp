@@ -4,6 +4,7 @@
 #include "pcm-io-metrics.h"
 
 #include <iostream>
+#include <algorithm>
 
 namespace pcm {
 
@@ -198,7 +199,7 @@ std::vector<size_t> TableRenderer::calculateColumnWidths() const
     {
         if (row.isSectionHeader) continue;
         for (size_t i = 0; i < row.values.size() && i < widths.size(); ++i)
-            widths[i] = std::max(widths[i], row.values[i].size());
+            widths[i] = (std::max)(widths[i], row.values[i].size());
     }
     for (auto& w : widths)
         w += padding;
@@ -399,7 +400,7 @@ void TableRenderer::renderStandaloneSystemSection(
     const size_t padding = 2;
     std::vector<size_t> colWidths(numCols, 0);
     for (size_t i = 0; i < numCols; ++i)
-        colWidths[i] = std::max(pairs[i].first.size(), pairs[i].second.size()) + padding;
+        colWidths[i] = (std::max)(pairs[i].first.size(), pairs[i].second.size()) + padding;
 
     size_t innerWidth = numCols - 1;  // column separators
     for (auto w : colWidths) innerWidth += w;
