@@ -837,7 +837,7 @@ static std::string findMetricsPath(const std::string& programPath, const std::st
     const std::string relPath = "pmu-events/" + platformDir + "/metrics.json";
 
     // 1. Next to the binary (post-build copy)
-    size_t lastSlash = programPath.find_last_of('/');
+    size_t lastSlash = programPath.find_last_of("/\\");
     std::string binDir = (lastSlash != std::string::npos) ? programPath.substr(0, lastSlash) : ".";
     std::string candidate = binDir + "/" + relPath;
     if (std::ifstream(candidate).good()) return candidate;

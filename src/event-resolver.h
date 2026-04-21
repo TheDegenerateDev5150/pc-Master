@@ -22,7 +22,7 @@ class PerfmonEventResolver {
 public:
     // Search for the perfmon directory containing mapfile.csv.
     // Checks: next to programPath binary, then install prefix.
-    // Returns empty string if not found.
+    // Falls back to "." (the current working directory) if no earlier location matches.
     static std::string findPerfmonPath(const std::string& programPath);
 
     // Initialize from explicit CPU identification.

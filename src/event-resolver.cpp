@@ -18,7 +18,7 @@ std::string PerfmonEventResolver::findPerfmonPath(const std::string& programPath
     const std::string marker = "mapfile.csv";
 
     // 1. Next to the binary (build output: bin/perfmon/)
-    size_t lastSlash = programPath.find_last_of('/');
+    size_t lastSlash = programPath.find_last_of("/\\");
     std::string binDir = (lastSlash != std::string::npos) ? programPath.substr(0, lastSlash) : ".";
     std::string candidate = binDir + "/perfmon";
     if (std::ifstream(candidate + "/" + marker).good()) return candidate;
