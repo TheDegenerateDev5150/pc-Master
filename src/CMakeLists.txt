@@ -216,8 +216,8 @@ if(PCM_BUILD_EXECUTABLES)
                 ${CMAKE_CURRENT_SOURCE_DIR}/pcm-io-metrics.cpp)
             add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_directory
-                    ${CMAKE_CURRENT_SOURCE_DIR}/pmu-events
-                    $<TARGET_FILE_DIR:${PROJECT_NAME}>/pmu-events)
+                    ${CMAKE_CURRENT_SOURCE_DIR}/metrics
+                    $<TARGET_FILE_DIR:${PROJECT_NAME}>/metrics)
         endif(${PROJECT_NAME} STREQUAL pcm-io)
 
         if(${PROJECT_NAME} STREQUAL pcm-sensor-server)

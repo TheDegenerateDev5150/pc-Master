@@ -826,14 +826,14 @@ static void print_metrics_format()
     cout << "     columns             (object)    => column header => [metricName per row]\n";
     cout << "     system-wide-metrics (optional)  => metrics rendered as system rows\n\n";
 
-    cout << " See src/pmu-events/icelake-sp/metrics.json for a complete example.\n\n";
+    cout << " See src/metrics/icelake-sp/metrics.json for a complete example.\n\n";
 }
 
 static std::string findMetricsPath(const std::string& programPath, const std::string& platformDir)
 {
     if (platformDir.empty()) return "";
 
-    const std::string relPath = "pmu-events/" + platformDir + "/metrics.json";
+    const std::string relPath = "metrics/" + platformDir + "/metrics.json";
 
     // 1. Next to the binary (post-build copy)
     size_t lastSlash = programPath.find_last_of("/\\");
