@@ -2831,8 +2831,13 @@ std::string& compressLWSAndRemoveCR( std::string& line ) {
 
     for ( pos = 0; pos < end; ++pos ) {
         start = pos;
-        if ( ::isspace( line[pos] ) ) {
-            while ( (pos+1) < line.size() && ::isspace( line[++pos] ) ) {
+        // Cast to unsigned char before passing to ::isspace: on platforms
+        // where char is signed, attacker-controlled bytes with the high bit
+        // set would otherwise be passed as negative values, which is
+        // undefined behavior for the <cctype> functions.
+        if ( ::isspace( static_cast<unsigned char>( line[pos] ) ) ) {
+            while ( (pos+1) < line.size() &&
+                    ::isspace( static_cast<unsigned char>( line[++pos] ) ) ) {
             }
             if ( (pos - start) > 1 ) {
                 line.erase( start+1,  pos-start-1 );
@@ -2850,21 +2855,224 @@ std::string& compressLWSAndRemoveCR( std::string& line ) {
     return line;
 }
 
+// Bounds applied to the server-side request reader to mitigate
+// Slowloris-style thread-pool exhaustion (CWE-400/CWE-770). The per-read
+// socket timeout (SO_RCVTIMEO) only fires when no data arrives, so an
+// attacker that dribbles a single byte before each timeout can keep a
+// worker thread blocked on std::getline() indefinitely. The bounds below
+// cap the total wall-clock time spent parsing the request line and
+// headers, plus the size of each line and the cumulative header bytes,
+// so a worker cannot be tied up by partial-but-progressing input.
+static constexpr std::chrono::seconds kRequestHeaderDeadline{ 30 };
+static constexpr size_t kMaxRequestLineBytes = 8192;
+static constexpr size_t kMaxHeaderLineBytes  = 8192;
+static constexpr size_t kMaxTotalHeaderBytes = 64 * 1024;
+
+// Scoped guard that temporarily tightens the underlying socket's SO_RCVTIMEO
+// so a single blocking read cannot exceed the remaining wall-clock budget,
+// then restores the previous SO_RCVTIMEO on destruction. Without this, a
+// single rs.get() can block for up to the configured socket recv timeout
+// (default 10s) even after the request-header deadline has effectively
+// expired, letting a slow client hold a worker past the intended cutoff.
+//
+// Important guarantees:
+//   * The previous SO_RCVTIMEO is read via getsockopt at construction and
+//     restored verbatim at destruction, so the socket's idle / keep-alive
+//     behavior for the NEXT request on the same connection is unchanged.
+//   * setsockopt is called directly on the FD; the socketbuf's stored
+//     timeout_ member is NOT modified, so setTimeout()'s "remembered" value
+//     remains the deployment-configured value.
+//   * The tightened value is only applied when it is strictly smaller than
+//     the currently configured timeout, so we never EXTEND a deployment's
+//     existing (shorter) recv timeout.
+//   * If rs is not backed by a basic_socketbuf (e.g. unit tests using a
+//     stringstream) the guard is a no-op.
+template <class Traits>
+class ScopedRecvTimeout {
+public:
+    ScopedRecvTimeout( std::basic_istream<char, Traits>& rs,
+                       std::chrono::steady_clock::time_point deadline )
+        : fd_( INVALID_SOCKET ), active_( false ) {
+        auto* sb = dynamic_cast<basic_socketbuf<16385, char, Traits>*>( rs.rdbuf() );
+        if ( sb == nullptr )
+            return;
+        socket_t fd = sb->socket();
+        if ( fd == INVALID_SOCKET )
+            return;
+        auto now = std::chrono::steady_clock::now();
+        long long remaining_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>( deadline - now ).count();
+        if ( remaining_ms <= 0 )
+            remaining_ms = 1;  // already past; let the next deadline check throw
+
+#ifdef _WIN32
+        DWORD prev = 0;
+        int   prev_len = sizeof( prev );
+        if ( getsockopt( fd, SOL_SOCKET, SO_RCVTIMEO, (char*)&prev, &prev_len ) != 0 )
+            return;
+        DWORD desired = static_cast<DWORD>( remaining_ms );
+        // Only tighten: never extend an existing shorter SO_RCVTIMEO. A prev
+        // value of 0 means "no timeout (block forever)", which is also
+        // weaker than any finite deadline, so override it.
+        if ( prev != 0 && desired >= prev )
+            return;
+        if ( setsockopt( fd, SOL_SOCKET, SO_RCVTIMEO, (char*)&desired, sizeof( desired ) ) != 0 )
+            return;
+        prev_ = prev;
+#else
+        struct timeval prev;
+        socklen_t prev_len = sizeof( prev );
+        if ( getsockopt( fd, SOL_SOCKET, SO_RCVTIMEO, (char*)&prev, &prev_len ) != 0 )
+            return;
+        struct timeval desired;
+        desired.tv_sec  = static_cast<time_t>( remaining_ms / 1000 );
+        desired.tv_usec = static_cast<suseconds_t>( ( remaining_ms % 1000 ) * 1000 );
+        long long prev_ms = static_cast<long long>( prev.tv_sec ) * 1000LL
+                          + static_cast<long long>( prev.tv_usec ) / 1000LL;
+        // Only tighten: never extend an existing shorter SO_RCVTIMEO. A prev
+        // value of 0 means "no timeout (block forever)", weaker than any
+        // finite deadline, so override it.
+        if ( prev_ms != 0 && remaining_ms >= prev_ms )
+            return;
+        if ( setsockopt( fd, SOL_SOCKET, SO_RCVTIMEO, (char*)&desired, sizeof( desired ) ) != 0 )
+            return;
+        prev_ = prev;
+#endif
+        fd_ = fd;
+        active_ = true;
+    }
+
+    ~ScopedRecvTimeout() {
+        if ( !active_ || fd_ == INVALID_SOCKET )
+            return;
+        try {
+            // Restore previous SO_RCVTIMEO directly via setsockopt so the
+            // socketbuf's stored timeout_ member is left untouched and the
+            // deployment-configured idle/keep-alive timeout is preserved for
+            // subsequent reads on this connection. A destructor must not throw,
+            // so check the return value but only log on failure; the worst case
+            // is that the socket retains the tightened timeout for the rest of
+            // this connection.
+            if (setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, (char*)&prev_, sizeof(prev_)) != 0) {
+                DBG(1, "ScopedRecvTimeout: setsockopt(SO_RCVTIMEO) restore failed, errno=", errno);
+            }
+        }
+        catch (...)
+        {
+            // no exceptions are allowed in destructors, so catch all and log;
+            // the worst case is that the socket retains the tightened timeout
+            // for the rest of this connection.
+        }
+    }
+
+    ScopedRecvTimeout( const ScopedRecvTimeout& ) = delete;
+    ScopedRecvTimeout& operator=( const ScopedRecvTimeout& ) = delete;
+
+private:
+    socket_t fd_;
+    bool     active_;
+#ifdef _WIN32
+    DWORD          prev_{ 0 };
+#else
+    struct timeval prev_{ 0, 0 };
+#endif
+};
+
+// Bounded line reader. Behaves like std::getline(rs, out) but enforces both a
+// wall-clock deadline and a maximum line length *while* the line is being read,
+// not only after a terminating newline arrives. This closes a Slowloris-style
+// gap where an attacker can drip bytes slowly enough that SO_RCVTIMEO never
+// fires (so std::getline blocks indefinitely) yet frequently enough that no
+// single per-recv timeout triggers either. Reads one character at a time so
+// the deadline / size checks are evaluated for every byte; in addition the
+// underlying socket's SO_RCVTIMEO is shrunk to the remaining deadline at the
+// start of the read so a single blocking rs.get() also cannot exceed the
+// wall-clock budget.
+//
+// Stops at '\n' (consumed, not appended) or at end-of-file. Sets the stream's
+// failbit on read failure / EOF without any data, mirroring std::getline so
+// callers' existing rs.fail() handling continues to work. Throws
+// std::runtime_error once the deadline elapses or the per-line byte cap is
+// exceeded; the caller's existing catch turns this into 400 Bad Request.
+// Constrained to char streams: the rest of the request parser
+// (HTTPHeader::parse, compressLWSAndRemoveCR, std::string requestLine, etc.)
+// is only meaningful for byte-oriented HTTP input, and the output buffer is a
+// std::string. The function signature itself enforces this constraint, so any
+// future instantiation of operator>> on a wsocketstream fails to compile here
+// rather than producing a silent narrowing or push_back type mismatch.
+template <class Traits>
+static void readLineBounded( std::basic_istream<char, Traits>& rs,
+                             std::string& out,
+                             size_t maxBytes,
+                             std::chrono::steady_clock::time_point deadline ) {
+    out.clear();
+    // Bound a single blocking recv to the remaining deadline so the per-byte
+    // deadline check below cannot be delayed past the cutoff by the socket's
+    // configured SO_RCVTIMEO. Only tightens (never extends) the existing
+    // timeout, and restores it on scope exit so the deployment-configured
+    // idle timeout for subsequent reads on this connection is preserved.
+    ScopedRecvTimeout<Traits> recvGuard( rs, deadline );
+    typename Traits::int_type ch;
+    bool readAny = false;
+    while ( true ) {
+        // Re-check the deadline before every byte so a slow drip cannot keep
+        // a worker thread parked here past the cutoff.
+        if ( std::chrono::steady_clock::now() > deadline )
+            throw std::runtime_error( "Request header read timeout exceeded" );
+        ch = rs.get();
+        if ( Traits::eq_int_type( ch, Traits::eof() ) ) {
+            // Match std::getline semantics: failbit is set only when no
+            // characters were extracted. rs.get() sets failbit|eofbit on EOF
+            // regardless, so when we did read bytes before EOF we must
+            // explicitly clear failbit (preserving badbit) so existing
+            // rs.fail() handling does not take the failure path on an
+            // otherwise successful line read terminated by EOF.
+            if ( !readAny ) {
+                rs.setstate( std::ios_base::failbit | std::ios_base::eofbit );
+            } else {
+                std::ios_base::iostate s = rs.rdstate();
+                s &= ~std::ios_base::failbit;
+                s |= std::ios_base::eofbit;
+                rs.clear( s );
+            }
+            return;
+        }
+        readAny = true;
+        char c = Traits::to_char_type( ch );
+        if ( c == '\n' ) {
+            return;
+        }
+        if ( out.size() >= maxBytes ) {
+            throw std::runtime_error( "HTTP line exceeds maximum allowed length" );
+        }
+        out.push_back( c );
+    }
+}
+
 // This method is for a server reading a request from the client
 template <class CharT, class Traits>
 basic_socketstream<CharT, Traits>& operator>>( basic_socketstream<CharT, Traits>& rs, HTTPRequest& m ) {
     DBG( 3, "Reading from the socket" );
+
+    // Bound the total time spent reading the request line and headers
+    // (see kRequestHeaderDeadline comment above).
+    auto const requestDeadline = std::chrono::steady_clock::now() + kRequestHeaderDeadline;
+    auto checkRequestDeadline = [requestDeadline]() {
+        if ( std::chrono::steady_clock::now() > requestDeadline )
+            throw std::runtime_error( "Request header read timeout exceeded" );
+    };
 
     // Read something like: GET /persecond/10 HTTP/1.1\r\n
     std::string requestLine, method, url, protocol;
     // We need to read a line and check if the request is valid
     // Fuzzers like to remove spaces so there are not enough elements
     // on the line and then we're in trouble with the old method
-    std::getline( rs, requestLine );
+    readLineBounded( rs, requestLine, kMaxRequestLineBytes, requestDeadline );
     if ( rs.fail() ) {
         DBG( 3, "Could not read from socket, might have been closed due to e.g. timeout" );
         throw std::runtime_error( "Could not read from socket, might have been closed due to e.g. timeout" );
     }
+    checkRequestDeadline();
     size_t nlPos = requestLine.find( '\n', 0 );
     if ( nlPos != std::string::npos )
         requestLine.erase( nlPos, 1 );
@@ -2911,32 +3119,81 @@ basic_socketstream<CharT, Traits>& operator>>( basic_socketstream<CharT, Traits>
     // m.debugPrint();
     std::string line;
     std::string concatLine;
+    size_t totalHeaderBytes = 0;
+    bool haveCurrentHeader = false;
     while ( true ) {
-        std::getline( rs, line );
+        readLineBounded( rs, line, kMaxHeaderLineBytes, requestDeadline );
+        if ( rs.fail() ) {
+            // Mirror the request-line and trailer reads: an unexpected
+            // disconnect or stream error mid-headers must not be treated as
+            // a valid empty terminator line, which would otherwise cause the
+            // server to proceed with a truncated request.
+            throw std::runtime_error( "Could not read header from socket, connection closed or stream error" );
+        }
+        checkRequestDeadline();
+        totalHeaderBytes += line.size();
+        if ( totalHeaderBytes > kMaxTotalHeaderBytes ) {
+            throw std::runtime_error( "HTTP headers exceed maximum allowed total length" );
+        }
         DBG( 3, "Line with whitespace: '", line, "'" );
-        concatLine += compressLWSAndRemoveCR( line );
 
-        DBG( 3, "Line without whitespace: '", line, "'" );
-        DBG( 3, "ConcatLine: '", concatLine, "'" );
-        // empty line is separator between headers and body
-        if ( concatLine.empty() ) {
+        // Detect a folded-header continuation line *before* compressing
+        // whitespace, since compressLWSAndRemoveCR collapses runs of
+        // whitespace and would obscure the leading SP/HTAB. Continuation
+        // detection used to rely on rs.peek() to look at the next byte,
+        // but rs.peek() can block in basic_socketbuf::underflow() outside
+        // the per-byte deadline checks performed by readLineBounded, which
+        // would let a Slowloris client hold a worker past
+        // kRequestHeaderDeadline. By inspecting the just-read line instead,
+        // every blocking read is performed inside readLineBounded where
+        // the deadline is enforced.
+        const bool isContinuation = !line.empty()
+            && ( line.front() == ' ' || line.front() == '\t' );
+
+        // Compress LWS / strip trailing CR in-place. This mutates `line`,
+        // which is safe because the line.front() check above is already done.
+        std::string compressed = compressLWSAndRemoveCR( line );
+        DBG( 3, "Line without whitespace: '", compressed, "'" );
+
+        // An empty line (after CR stripping) is the separator between
+        // headers and body. Finalize any pending folded header first.
+        if ( compressed.empty() ) {
+            if ( haveCurrentHeader && !concatLine.empty() ) {
+                HTTPHeader hh = HTTPHeader::parse( concatLine );
+                hh.debugPrint();
+                if ( hh.type() == HeaderType::Invalid ) {
+                    throw std::runtime_error( std::string("Bad Request received: ") + hh.invalidReason() );
+                }
+                m.addHeader( hh );
+                concatLine.clear();
+                haveCurrentHeader = false;
+            }
             break;
         }
 
-        // Header spans multiple lines if a line starts with SP or HTAB, fetch another line and append to concatLine
-        if ( rs.peek() == ' ' || rs.peek() == '\t' )
+        if ( isContinuation ) {
+            // A continuation line without a preceding header is malformed.
+            if ( !haveCurrentHeader ) {
+                throw std::runtime_error( "Bad Request received: header continuation without preceding header" );
+            }
+            concatLine += compressed;
             continue;
-
-        HTTPHeader hh;
-        hh = HTTPHeader::parse( concatLine );
-        hh.debugPrint();
-        if ( hh.type() == HeaderType::Invalid ) {
-            // Bad request, throw exception, catch in httpconnection, create response there
-            throw std::runtime_error( std::string("Bad Request received: ") + hh.invalidReason() );
         }
-        m.addHeader( hh );
-        // Parsing of header done, clear concatLine to start fresh
-        concatLine.clear();
+
+        // Non-continuation: parse any pending header that has now been
+        // fully accumulated, then start a fresh header with this line.
+        if ( haveCurrentHeader && !concatLine.empty() ) {
+            HTTPHeader hh = HTTPHeader::parse( concatLine );
+            hh.debugPrint();
+            if ( hh.type() == HeaderType::Invalid ) {
+                throw std::runtime_error( std::string("Bad Request received: ") + hh.invalidReason() );
+            }
+            m.addHeader( hh );
+            concatLine.clear();
+        }
+        concatLine = compressed;
+        haveCurrentHeader = true;
+        DBG( 3, "ConcatLine: '", concatLine, "'" );
     }
     DBG( 3, "Done parsing headers" );
 
@@ -3012,9 +3269,32 @@ basic_socketstream<CharT, Traits>& operator>>( basic_socketstream<CharT, Traits>
                 // There is now either a \r\n pair in the stream, or footers/trailers, lets see:
                 std::string remainder;
                 size_t numHeadersAdded = 0;
-                std::getline( rs, remainder, '\n' );
+                readLineBounded( rs, remainder, kMaxHeaderLineBytes, requestDeadline );
+                if ( rs.fail() ) {
+                    throw std::runtime_error( "Could not read trailer from socket, connection closed or stream error" );
+                }
+                checkRequestDeadline();
                 DBG( 3, "Parsing remainder '", remainder, "'" );
-                while ( remainder[0] != '\r' ) {
+                // Share the cumulative header byte counter with the main
+                // header loop above so the kMaxTotalHeaderBytes cap applies
+                // to headers + trailers together, not separately.
+                totalHeaderBytes += remainder.size();
+                if ( totalHeaderBytes > kMaxTotalHeaderBytes ) {
+                    throw std::runtime_error( "HTTP headers exceed maximum allowed total length" );
+                }
+                // Only a bare CR line (after readLineBounded strips the
+                // terminating LF) marks the end of the trailer section.
+                // Any other non-empty line, including malformed content that
+                // starts with '\r', must still be parsed/validated rather
+                // than being silently treated as the trailer terminator.
+                while ( !remainder.empty() ) {
+                    if ( remainder == "\r" ) {
+                        break;
+                    }
+                    // Strip trailing '\r' (and compress folding LWS) before
+                    // parsing so HTTPHeader::parse does not see a stray CR
+                    // in the header value, matching the main header loop.
+                    compressLWSAndRemoveCR( remainder );
                     HTTPHeader hh = HTTPHeader::parse( remainder );
                     if ( hh.type() == HeaderType::Invalid ) {
                         // Bad request, throw exception, catch in httpconnection, create response there
@@ -3022,6 +3302,16 @@ basic_socketstream<CharT, Traits>& operator>>( basic_socketstream<CharT, Traits>
                     }
                     m.addHeader( hh );
                     ++numHeadersAdded;
+                    readLineBounded( rs, remainder, kMaxHeaderLineBytes, requestDeadline );
+                    if ( rs.fail() ) {
+                        throw std::runtime_error( "Could not read trailer from socket, connection closed or stream error" );
+                    }
+                    checkRequestDeadline();
+                    totalHeaderBytes += remainder.size();
+                    if ( totalHeaderBytes > kMaxTotalHeaderBytes ) {
+                        throw std::runtime_error( "HTTP headers exceed maximum allowed total length" );
+                    }
+                    DBG( 3, "Parsing remainder '", remainder, "'" );
                 }
                 // If trailer contains 3 headers then 3 headers should be added
                 if ( numHeadersAdded != trailerLength )

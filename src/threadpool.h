@@ -5,12 +5,18 @@
 
 #include "debug.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <stdexcept>
+#include <string>
 #include <thread>
 #include <future>
 #include <functional>
 #include <mutex>
 #include <condition_variable>
 #include <queue>
+#include <vector>
 
 namespace pcm {
 
@@ -76,7 +82,52 @@ public:
 
 public:
     static ThreadPool& getInstance() {
-        static ThreadPool tp_(64);
+        // Scale the worker pool with available hardware concurrency rather than
+        // hard-coding a small fixed size. The fixed 64-thread pool combined with
+        // line-oriented blocking parsing made it cheap for a remote attacker to
+        // saturate all workers (CWE-400/CWE-770). The per-request wall-clock
+        // deadline added in the request reader is the primary defense, but
+        // sizing the pool generously (and at minimum 64) raises the bar for
+        // any future similar resource-exhaustion attempts and lets larger
+        // hosts actually use their cores.
+        //
+        // An upper bound (kMaxThreads) prevents the pool from growing without
+        // limit on hosts (or container runtimes) that report very large
+        // hardware_concurrency() values, which could itself exhaust memory or
+        // scheduler resources. The pool size is also overridable at startup
+        // via the PCM_SENSOR_SERVER_POOL_SIZE environment variable so
+        // deployments can tune it without rebuilding.
+        static const unsigned int kMinThreads = 64;
+        static const unsigned int kMaxThreads = 256;
+        static const unsigned int n = []() {
+            if ( const char* env = std::getenv( "PCM_SENSOR_SERVER_POOL_SIZE" ) ) {
+                try {
+                    const std::string envStr( env );
+                    std::size_t pos = 0;
+                    unsigned long v = std::stoul( envStr, &pos );
+                    if ( envStr.find_first_not_of( " \t\n\r\f\v", pos ) == std::string::npos &&
+                         v >= kMinThreads && v <= kMaxThreads )
+                        return static_cast<unsigned int>( v );
+                } catch ( const std::invalid_argument& ) {
+                    // fall through to default sizing on unparseable value
+                } catch ( const std::out_of_range& ) {
+                    // fall through to default sizing on out-of-range value
+                }
+            }
+            const unsigned int hw = std::thread::hardware_concurrency();
+            // Compute hw*2 in a wider type to avoid overflow before clamping
+            // on platforms / container runtimes that report a very large
+            // hardware_concurrency() value.
+            // min/max are wrapped in extra parentheses to defeat the macro
+            // definitions of min/max that <windows.h> introduces on MSVC
+            // (see AGENTS.md for the project-wide convention).
+            const std::uint64_t scaled = static_cast<std::uint64_t>( hw ) * 2u;
+            const std::uint64_t clamped = (std::min<std::uint64_t>)(
+                kMaxThreads,
+                (std::max<std::uint64_t>)( kMinThreads, scaled ) );
+            return static_cast<unsigned int>( clamped );
+        }();
+        static ThreadPool tp_( static_cast<int>( n ) );
         return tp_;
     }
 
