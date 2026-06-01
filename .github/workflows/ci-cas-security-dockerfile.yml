@@ -28,6 +28,8 @@ jobs:
       - name: CAS Security Orchestrator (Source Only)
         uses: intel-innersource/applications.security.monitoring.cas@v3.0.2
         with:
+          itsf-username: ${{ secrets.ITSF_USERNAME }}
+          itsf-password: ${{ secrets.ITSF_PASSWORD }}
           sdl-api-key: ${{ secrets.SDL_API_KEY }}
           sdl-project-id: ${{ secrets.SDL_PROJECT_ID }}
           sdl-idsid-value: ${{ secrets.SDL_IDSID_VALUE }}
