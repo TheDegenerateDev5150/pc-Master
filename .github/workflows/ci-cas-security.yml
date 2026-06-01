@@ -32,7 +32,7 @@ jobs:
           pip install -r Intel-PMT/tools/docker/requirements.txt || true
 
       - name: CAS Security Orchestrator (Source Only)
-        uses: intel-innersource/applications.security.monitoring.cas@v2.1.1
+        uses: intel-innersource/applications.security.monitoring.cas@v3.0.2
         with:
           sdl-api-key: ${{ secrets.SDL_API_KEY }}
           sdl-project-id: ${{ secrets.SDL_PROJECT_ID }}
