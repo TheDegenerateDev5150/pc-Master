@@ -26,7 +26,7 @@ jobs:
           python-version: '3.11'
 
       - name: CAS Security Orchestrator (Source Only)
-        uses: intel-innersource/applications.security.monitoring.cas@v2
+        uses: intel-innersource/applications.security.monitoring.cas@v3.0.2
         with:
           sdl-api-key: ${{ secrets.SDL_API_KEY }}
           sdl-project-id: ${{ secrets.SDL_PROJECT_ID }}
