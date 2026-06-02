@@ -76,18 +76,7 @@
 #include <atomic>
 #include <system_error>
 
-#ifdef __APPLE__
-#include <sys/types.h>
-#include <sys/sysctl.h>
-#include <sys/sem.h>
-#endif
-
 namespace pcm {
-
-#ifdef __APPLE__
-// convertUnknownToInt is used in the safe sysctl call to convert an unknown size to an int
-int convertUnknownToInt(size_t size, char* value);
-#endif
 
 #ifdef _MSC_VER
 
@@ -1208,7 +1197,6 @@ bool PCM::discoverSystemTopology()
         }
     }
 
-#ifndef __APPLE__
     auto populateEntry = [&topologyDomainMap,&smtMaskWidth, &coreMaskWidth, &l2CacheMaskShift, &l3CacheMaskShift](TopologyEntry& entry)
     {
         auto getAPICID = [&](const uint32 leaf)
@@ -1265,7 +1253,6 @@ bool PCM::discoverSystemTopology()
         }
         entry.l3_cache_id = extract_bits_32(getAPICID(0xb), l3CacheMaskShift, 31);
     };
-#endif
 
     auto populateHybridEntry = [this](TopologyEntry& entry, int core) -> bool
     {
@@ -1356,7 +1343,7 @@ bool PCM::discoverSystemTopology()
     deleteAndNullifyArray(base_slpi);
 
 #else
-    // for Linux, Mac OS, FreeBSD and DragonFlyBSD
+    // for Linux, FreeBSD and DragonFlyBSD
 
     TopologyEntry entry;
 
@@ -1440,62 +1427,6 @@ bool PCM::discoverSystemTopology()
         socketIdMap[entry.socket_id] = 0;
     }
 
-#else // Getting processor info for Mac OS
-#define SAFE_SYSCTLBYNAME(message, ret_value)                                                              \
-    {                                                                                                      \
-        size_t size;                                                                                       \
-        char *pParam;                                                                                      \
-        if(0 != sysctlbyname(message, NULL, &size, NULL, 0))                                               \
-        {                                                                                                  \
-            std::cerr << "Unable to determine size of " << message << " sysctl return type.\n";            \
-            return false;                                                                                  \
-        }                                                                                                  \
-        if(NULL == (pParam = (char *)malloc(size)))                                                        \
-        {                                                                                                  \
-            std::cerr << "Unable to allocate memory for " << message << "\n";                              \
-            return false;                                                                                  \
-        }                                                                                                  \
-        if(0 != sysctlbyname(message, (void*)pParam, &size, NULL, 0))                                      \
-        {                                                                                                  \
-            std::cerr << "Unable to get " << message << " from sysctl.\n";                                 \
-            return false;                                                                                  \
-        }                                                                                                  \
-        ret_value = convertUnknownToInt(size, pParam);                                                     \
-        freeAndNullify(pParam);                                                                            \
-    }
-// End SAFE_SYSCTLBYNAME
-
-    // Using OSXs sysctl to get the number of CPUs right away
-    SAFE_SYSCTLBYNAME("hw.logicalcpu", num_cores)
-    num_online_cores = num_cores;
-
-#undef SAFE_SYSCTLBYNAME
-
-    // The OSX version needs the MSR handle earlier so that it can build the CPU topology.
-    // This topology functionality should potentially go into a different KEXT
-    for(int i = 0; i < num_cores; i++)
-    {
-        MSR.push_back(std::make_shared<SafeMsrHandle>(i));
-    }
-
-    assert(num_cores > 0);
-    TopologyEntry entries[num_cores];
-    if (MSR[0]->buildTopology(num_cores, entries) != 0) {
-      std::cerr << "Unable to build CPU topology" << std::endl;
-      return false;
-    }
-    for(int i = 0; i < num_cores; i++){
-        socketIdMap[entries[i].socket_id] = 0;
-        if(entries[i].os_id >= 0)
-        {
-            if (populateHybridEntry(entries[i], i) == false)
-            {
-                return false;
-            }
-            topology.push_back(entries[i]);
-        }
-    }
-// End of OSX specific code
 #endif
 
 #endif //end of ifdef _MSC_VER
@@ -1681,12 +1612,6 @@ void PCM::printSystemTopology() const
 
 bool PCM::initMSR()
 {
-#ifdef __APPLE__
-    for (size_t i=0; i < MSR.size(); ++i)
-    {
-        systemTopology->addMSRHandleToOSThread(MSR[i], (uint32)i);
-    }
-#else
     try
     {
         for (int i = 0; i < (int)num_cores; ++i)
@@ -1716,7 +1641,6 @@ bool PCM::initMSR()
 #endif
         return false;
     }
-#endif
     return true;
 }
 
@@ -5531,31 +5455,6 @@ bool PCM::supportsRDTSCP() const
     return 1 == supports;
 }
 
-#ifdef __APPLE__
-
-int convertUnknownToInt(size_t size, char* value)
-{
-    if(sizeof(int) == size)
-    {
-        return *(int*)value;
-    }
-    else if(sizeof(long) == size)
-    {
-        return *(long *)value;
-    }
-    else if(sizeof(long long) == size)
-    {
-        return *(long long *)value;
-    }
-    else
-    {
-        // In this case, we don't know what it is so we guess int
-        return *(int *)value;
-    }
-}
-
-#endif
-
 
 uint64 PCM::getTickCount(uint64 multiplier, int32 core)
 {
@@ -7513,11 +7412,6 @@ int32 PCM::mapNUMANodeToSocket(uint32 numa_node_id) const
     }
 #endif
 
-    return cacheAndReturn(-1);
-#elif defined(__APPLE__)
-    // On macOS, NUMA information is not readily available
-    // For now, return -1 to indicate the mapping is not available
-    (void)numa_node_id; // Suppress unused parameter warning
     return cacheAndReturn(-1);
 #else
     // Unsupported platform
@@ -10275,7 +10169,7 @@ void ServerUncorePMUs::cleanupMemTest(const ServerUncorePMUs::MemTestParam & par
         munmap(b, memBufferBlockSize);
 #elif defined(_MSC_VER)
         VirtualFree(b, memBufferBlockSize, MEM_RELEASE);
-#elif defined(__FreeBSD__) || defined(__APPLE__)
+#elif defined(__FreeBSD__)
         (void) b;                  // avoid the unused variable warning
         (void) memBufferBlockSize; // avoid the unused variable warning
 #else

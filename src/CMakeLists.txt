@@ -8,9 +8,7 @@ set(MINIMUM_OPENSSL_VERSION 1.1.1)
 
 file(GLOB COMMON_SOURCES pcm-accel-common.cpp msr.cpp cpucounters.cpp pci.cpp mmio.cpp tpmi.cpp pmt.cpp bw.cpp utils.cpp topology.cpp debug.cpp threadpool.cpp uncore_pmu_discovery.cpp pcm-iio-pmu.cpp pcm-iio-topology.cpp lspci.cpp dashboard.cpp ${PCM_PUGIXML_CPP})
 
-if (NOT APPLE)
-  file(GLOB UNIX_SOURCES resctrl.cpp)
-endif()
+file(GLOB UNIX_SOURCES resctrl.cpp)
 
 if (LINUX)
     if(EXISTS "/etc/os-release") #  AND IS_READABLE "/etc/os-release" (3.29 cmake required :-( )
@@ -37,10 +35,8 @@ if(NOT PCM_NO_ASAN)
     endif()
 endif()
 
-if(UNIX)  # LINUX, FREE_BSD, APPLE
-    if (NOT APPLE)
-      set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS} -s")  # --strip-unneeded for packaging
-    endif()
+if(UNIX)  # LINUX, FREE_BSD
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS} -s")  # --strip-unneeded for packaging
     list(APPEND PROJECT_NAMES pcm-sensor)
 
     # libpcm.a
@@ -84,11 +80,7 @@ if(UNIX)  # LINUX, FREE_BSD, APPLE
         endif()
     endif()
 
-    if(APPLE)
-        add_subdirectory(MacMSRDriver)
-        include_directories("${CMAKE_SOURCE_DIR}/src/MacMSRDriver") # target_include_directories doesn't work
-        target_link_libraries(PCM_SHARED PRIVATE PCM_STATIC_SILENT PcmMsr Threads::Threads)
-    elseif(LINUX)
+    if(LINUX)
         target_link_libraries(PCM_SHARED PRIVATE PCM_STATIC_SILENT Threads::Threads "${PCM_DYNAMIC_ASAN}")
     else()
         target_link_libraries(PCM_SHARED PRIVATE PCM_STATIC_SILENT Threads::Threads)
@@ -241,11 +233,6 @@ if(PCM_BUILD_EXECUTABLES)
             install(TARGETS ${PROJECT_NAME} DESTINATION ${CMAKE_INSTALL_SBINDIR})
         endif(LINUX OR FREE_BSD)
 
-        if(APPLE)
-            set(LIBS ${LIBS} Threads::Threads PcmMsr)
-            install(TARGETS ${PROJECT_NAME} DESTINATION ${CMAKE_INSTALL_SBINDIR})
-        endif(APPLE)
-
         if(MSVC)
             target_compile_definitions(${PROJECT_NAME} PRIVATE _UNICODE UNICODE _CONSOLE) # for all, except pcm-lib and pcm-service
         endif(MSVC)
@@ -258,7 +245,7 @@ endif(PCM_BUILD_EXECUTABLES)
 # Install
 #######################
 
-if(UNIX) # APPLE, LINUX, FREE_BSD
+if(UNIX) # LINUX, FREE_BSD
     if(LINUX)
         # Daemon & client
         file(GLOB DAEMON_SOURCES "daemon/*.cpp")

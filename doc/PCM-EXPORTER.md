@@ -18,7 +18,7 @@ $ ./pcm-sensor-server --help
 Usage: ./pcm-sensor-server [OPTION]
 
 Valid Options:
-    -d                   : Run in the background (Linux/macOS only)
+    -d                   : Run in the background (Linux only)
     -p portnumber        : Run on port <portnumber> (default port is 9738)
     -l|--listen address  : Listen on IP address <address> (default: all interfaces)
     -r|--reset           : Reset programming of the performance counters.

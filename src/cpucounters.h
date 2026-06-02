@@ -2085,7 +2085,6 @@ public:
     //! \note On Linux: Uses /sys/devices/system/node/nodeX/cpulist
     //! \note On Windows: Uses GetLogicalProcessorInformationEx (may have limitations with multi-group processors)
     //! \note On FreeBSD: Uses vm.ndomains and cpuset_getdomain (FreeBSD 12.0+)
-    //! \note On macOS: Not implemented, returns -1
     int32 mapNUMANodeToSocket(uint32 numa_node_id) const;
 
     size_t getNumCXLPorts(uint32 socket) const
