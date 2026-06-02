@@ -73,6 +73,7 @@ typedef int socket_t;
 #include <chrono>
 #include <algorithm>
 #include <mutex>
+#include <condition_variable>
 #include <thread>
 #include <atomic>
 
@@ -3501,12 +3502,20 @@ public:
             if ( callback ) {
                 try {
                     (*callback)( hs_, request, response );
-                } catch ( std::exception& e ) {
+                } catch ( const std::exception& e ) {
                     // A request handler must never take down the worker thread
                     // (and with it the whole process). Turn any unexpected
                     // exception into a 500 response so the connection fails
                     // gracefully instead of calling std::terminate.
                     DBG( 3, "Exception while handling request: ", e.what() );
+                    response = HTTPResponse();
+                    response.setProtocol( request.protocol() );
+                    std::string body( "500 Internal Server Error." );
+                    response.createResponse( TextPlain, body, RC_500_InternalServerError );
+                } catch ( ... ) {
+                    DBG( 3, "Unknown exception while handling request" );
+                    response = HTTPResponse();
+                    response.setProtocol( request.protocol() );
                     std::string body( "500 Internal Server Error." );
                     response.createResponse( TextPlain, body, RC_500_InternalServerError );
                 }
@@ -3671,13 +3680,15 @@ public:
     void addAggregator( std::shared_ptr<Aggregator> agp ) {
         DBG( 4, "HTTPServer::addAggregator( agp=", std::hex, agp.get(), " ) called" );
 
-        agVectorMutex_.lock();
-        agVector_.insert( agVector_.begin(), agp );
-        if ( agVector_.size() > maxAggregators_ ) {
-            DBG( 4, "HTTPServer::addAggregator(): Removing last Aggegator" );
-            agVector_.pop_back();
+        {
+            std::lock_guard<std::mutex> lock( agVectorMutex_ );
+            agVector_.insert( agVector_.begin(), agp );
+            if ( agVector_.size() > maxAggregators_ ) {
+                DBG( 4, "HTTPServer::addAggregator(): Removing last Aggegator" );
+                agVector_.pop_back();
+            }
         }
-        agVectorMutex_.unlock();
+        agVectorCV_.notify_all();
     }
 
     std::pair<std::shared_ptr<Aggregator>,std::shared_ptr<Aggregator>> getAggregators( size_t index, size_t index2 ) {
@@ -3690,13 +3701,12 @@ public:
         if ( (std::max)( index, index2 ) >= maxAggregators_ )
             throw std::runtime_error("BUG: getAggregator: requested index can never be satisfied. Fix the code!" );
 
-        // simply wait until we have enough samples to return
-        while( agVector_.size() < ( (std::max)( index, index2 ) + 1 ) )
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-
-        agVectorMutex_.lock();
+        // Wait under the mutex until we have enough samples to return, using the
+        // condition variable so we don't race against addAggregator().
+        auto needSize = (std::max)( index, index2 ) + 1;
+        std::unique_lock<std::mutex> lock( agVectorMutex_ );
+        agVectorCV_.wait( lock, [&]{ return agVector_.size() >= needSize; } );
         auto ret = std::make_pair( agVector_[ index ], agVector_[ index2 ] );
-        agVectorMutex_.unlock();
         return ret;
     }
 
@@ -3742,6 +3752,7 @@ protected:
     std::vector<http_callback>               callbackList_;
     std::vector<std::shared_ptr<Aggregator>> agVector_;
     std::mutex agVectorMutex_;
+    std::condition_variable agVectorCV_;
     PeriodicCounterFetcher* pcf_;
     bool stopped_;
 };
@@ -4259,8 +4270,8 @@ void my_get_callback( HTTPServer* hs, HTTPRequest const & req, HTTPResponse & re
                 if ( std::all_of( url.path_.begin(), url.path_.end(), ::isdigit ) ) {
                     size_t seconds;
                     try {
-                        seconds = std::stoll( url.path_ );
-                    } catch ( std::exception& e ) {
+                        seconds = std::stoull( url.path_ );
+                    } catch ( const std::exception& e ) {
                         DBG( 3, "Error during conversion of /persecond/ seconds: ", e.what() );
                         seconds = 0;
                     }
