@@ -3499,7 +3499,17 @@ public:
             // Do processing of the request here
             auto callback = callbackList_[request.method()];
             if ( callback ) {
-                (*callback)( hs_, request, response );
+                try {
+                    (*callback)( hs_, request, response );
+                } catch ( std::exception& e ) {
+                    // A request handler must never take down the worker thread
+                    // (and with it the whole process). Turn any unexpected
+                    // exception into a 500 response so the connection fails
+                    // gracefully instead of calling std::terminate.
+                    DBG( 3, "Exception while handling request: ", e.what() );
+                    std::string body( "500 Internal Server Error." );
+                    response.createResponse( TextPlain, body, RC_500_InternalServerError );
+                }
             } else {
                 std::string body( "501 Not Implemented." );
                 body += " Method \"" + HTTPMethodProperties::getMethodAsString(request.method()) + "\" is not implemented (yet).";
@@ -3594,6 +3604,17 @@ private:
 
 class HTTPServer : public Server {
 public:
+    // The internal history of aggregators is permanently capped at
+    // maxAggregators_ entries (see addAggregator()), so the only valid indices
+    // are 0 .. maxAggregators_ - 1. Answering /persecond/X compares the newest
+    // sample (index 0) with the sample X seconds earlier (index X), which needs
+    // X + 1 retained entries. The largest X that can ever be satisfied is
+    // therefore maxAggregators_ - 1. Deriving the accepted bound from the cap
+    // keeps the route validation and the retention policy in sync and prevents
+    // the off-by-one that caused /persecond/30 to block a worker forever.
+    static constexpr size_t maxAggregators_ = 30;
+    static constexpr size_t maxPerSecondSeconds_ = maxAggregators_ - 1;
+
     HTTPServer() : Server( "", 80 ), stopped_( false ){
         DBG( 3, "HTTPServer::HTTPServer()" );
         callbackList_.resize( 256 );
@@ -3652,7 +3673,7 @@ public:
 
         agVectorMutex_.lock();
         agVector_.insert( agVector_.begin(), agp );
-        if ( agVector_.size() > 30 ) {
+        if ( agVector_.size() > maxAggregators_ ) {
             DBG( 4, "HTTPServer::addAggregator(): Removing last Aggegator" );
             agVector_.pop_back();
         }
@@ -3662,6 +3683,12 @@ public:
     std::pair<std::shared_ptr<Aggregator>,std::shared_ptr<Aggregator>> getAggregators( size_t index, size_t index2 ) {
         if ( index == index2 )
             throw std::runtime_error("BUG: getAggregator: both indices are equal. Fix the code!" );
+
+        // The history is permanently capped at maxAggregators_ entries, so any
+        // request for an index that can never be retained would otherwise wait
+        // forever. Fail fast instead of blocking a worker thread indefinitely.
+        if ( (std::max)( index, index2 ) >= maxAggregators_ )
+            throw std::runtime_error("BUG: getAggregator: requested index can never be satisfied. Fix the code!" );
 
         // simply wait until we have enough samples to return
         while( agVector_.size() < ( (std::max)( index, index2 ) + 1 ) )
@@ -4178,7 +4205,7 @@ void my_get_callback( HTTPServer* hs, HTTPRequest const & req, HTTPResponse & re
     <ul>\n\
       <li>/ : This will fetch the counter values since start of the daemon, minus overflow so should be considered absolute numbers and should be used for further processing by yourself.</li>\n\
       <li>/persecond : This will fetch data from the internal sample thread which samples every second and returns the difference between the last 2 samples.</li>\n\
-      <li>/persecond/X : This will fetch data from the internal sample thread which samples every second and returns the difference between the last 2 samples which are X seconds apart. X can be at most 30 seconds without changing the source code.</li>\n\
+      <li>/persecond/X : This will fetch data from the internal sample thread which samples every second and returns the difference between the last 2 samples which are X seconds apart. X can be at most 29 seconds without changing the source code.</li>\n\
       <li>/metrics : The Prometheus server does not send an Accept header to decide what format to return so it got its own endpoint that will always return data in the Prometheus format. pcm-sensor-server is sending the header \"Content-Type: text/plain; version=0.0.4\" as required. This /metrics endpoints mimics the same behavior as / and data is thus absolute, not relative.</li>\n\
       <li>/dashboard/influxdb : This will return JSON for a Grafana dashboard with InfluxDB backend that holds all counters. Please see the documentation for more information.</li>\n\
       <li>/dashboard/prometheus : This will return JSON for a Grafana dashboard with Prometheus backend that holds all counters. Please see the documentation for more information.</li>\n\
@@ -4237,11 +4264,11 @@ void my_get_callback( HTTPServer* hs, HTTPRequest const & req, HTTPResponse & re
                         DBG( 3, "Error during conversion of /persecond/ seconds: ", e.what() );
                         seconds = 0;
                     }
-                    if ( 1 <= seconds && 30 >= seconds ) {
+                    if ( 1 <= seconds && HTTPServer::maxPerSecondSeconds_ >= seconds ) {
                         aggregatorPair = hs->getAggregators( seconds, 0 );
                     } else {
-                        DBG( 3, "seconds equals 0 or seconds larger than 30 is not allowed" );
-                        std::string body( "400 Bad Request. seconds equals 0 or seconds larger than 30 is not allowed" );
+                        DBG( 3, "seconds equals 0 or seconds larger than ", HTTPServer::maxPerSecondSeconds_, " is not allowed" );
+                        std::string body( "400 Bad Request. seconds equals 0 or seconds larger than " + std::to_string( HTTPServer::maxPerSecondSeconds_ ) + " is not allowed" );
                         resp.createResponse( TextPlain, body, RC_400_BadRequest );
                         return;
                     }
