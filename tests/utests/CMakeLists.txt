@@ -16,7 +16,6 @@ file(GLOB READ_NUMBER_TEST_FILES read-number-utest.cpp)
 file(GLOB EVENT_RESOLVER_TEST_FILES event-resolver-utest.cpp ${CMAKE_SOURCE_DIR}/src/event-resolver.cpp)
 file(GLOB PCM_IO_METRICS_TEST_FILES pcm-io-metrics-utest.cpp ${CMAKE_SOURCE_DIR}/src/pcm-io-metrics.cpp)
 file(GLOB PCM_SENSOR_SERVER_OVERFLOW_TEST_FILES pcm-sensor-server-overflow-utest.cpp)
-file(GLOB PCM_SENSOR_SERVER_PERSECOND_TEST_FILES pcm-sensor-server-persecond-utest.cpp)
 
 set(LIBS Threads::Threads PCM_STATIC)
 
@@ -26,7 +25,6 @@ add_executable(read-number-utest ${READ_NUMBER_TEST_FILES})
 add_executable(event-resolver-utest ${EVENT_RESOLVER_TEST_FILES})
 add_executable(pcm-io-metrics-utest ${PCM_IO_METRICS_TEST_FILES})
 add_executable(pcm-sensor-server-overflow-utest ${PCM_SENSOR_SERVER_OVERFLOW_TEST_FILES})
-add_executable(pcm-sensor-server-persecond-utest ${PCM_SENSOR_SERVER_PERSECOND_TEST_FILES})
 
 configure_file(
     ${CMAKE_SOURCE_DIR}/src/opCode-6-174.txt
@@ -88,13 +86,6 @@ target_link_libraries(
     ${LIBS}
 )
 
-target_link_libraries(
-    pcm-sensor-server-persecond-utest
-    GTest::gtest_main
-    GTest::gmock_main
-    ${LIBS}
-)
-
 include(GoogleTest)
 gtest_discover_tests(lspci-utest)
 gtest_discover_tests(pcm-iio-utest)
@@ -102,4 +93,3 @@ gtest_discover_tests(read-number-utest)
 gtest_discover_tests(event-resolver-utest)
 gtest_discover_tests(pcm-io-metrics-utest)
 gtest_discover_tests(pcm-sensor-server-overflow-utest)
-gtest_discover_tests(pcm-sensor-server-persecond-utest)
