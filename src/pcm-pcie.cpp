@@ -93,8 +93,6 @@ void print_usage(const string & progname)
     cout << "\n";
 }
 
-// getPlatform() is defined inline in pcm-pcie.h.
-
 PCM_MAIN_NOTHROW;
 
 int mainThrows(int argc, char * argv[])
