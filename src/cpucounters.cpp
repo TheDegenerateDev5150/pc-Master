@@ -5924,7 +5924,17 @@ PCM::ErrorCode PCM::programServerUncoreLatencyMetrics(bool enable_pmm)
 
     if (enable_pmm == false)
     {   //DDR is false
-        if (ICX == cpu_family_model || SPR == cpu_family_model || EMR == cpu_family_model)
+        if (GNR == cpu_family_model || GNR_D == cpu_family_model || SRF == cpu_family_model || CWF == cpu_family_model)
+	    {
+                // Official perfmon event names (GNR/GNR-D/SRF/CWF iMC uncore, see perfmon/{GNR,SRF,CWF}/events/*_uncore.json):
+                // On these CPUs each iMC channel has two sub-channels (SCH0/SCH1) and two pseudo-channels (PCH0/PCH1);
+                // we use the SCH0_PCH0 variant for all four counters (analogous to the PCH0 pick on ICX).
+                DDRConfig[0] = MC_CH_PCI_PMON_CTL_EVENT(0x80) + MC_CH_PCI_PMON_CTL_UMASK(0x00);  // DRAM RPQ occupancy   -> UNC_M_RPQ_OCCUPANCY_SCH0_PCH0
+                DDRConfig[1] = MC_CH_PCI_PMON_CTL_EVENT(0x10) + MC_CH_PCI_PMON_CTL_UMASK(0x10);  // DRAM RPQ Insert      -> UNC_M_RPQ_INSERTS.SCH0_PCH0
+                DDRConfig[2] = MC_CH_PCI_PMON_CTL_EVENT(0x84) + MC_CH_PCI_PMON_CTL_UMASK(0x00);  // DRAM WPQ Occupancy   -> UNC_M_WPQ_OCCUPANCY_SCH0_PCH0
+                DDRConfig[3] = MC_CH_PCI_PMON_CTL_EVENT(0x22) + MC_CH_PCI_PMON_CTL_UMASK(0x10);  // DRAM WPQ Insert      -> UNC_M_WPQ_INSERTS.SCH0_PCH0
+
+	    } else if (ICX == cpu_family_model || SPR == cpu_family_model || EMR == cpu_family_model)
 	    {
                 // Official perfmon event names (ICX/SPR/EMR iMC uncore, see perfmon/{ICX,SPR,EMR}/events/*_uncore.json):
                 DDRConfig[0] = MC_CH_PCI_PMON_CTL_EVENT(0x80) + MC_CH_PCI_PMON_CTL_UMASK(1);  // DRAM RPQ occupancy   -> UNC_M_RPQ_OCCUPANCY_PCH0

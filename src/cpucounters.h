@@ -2826,6 +2826,10 @@ public:
             || cpu_family_model == PCM::ICX
             || cpu_family_model == PCM::SPR
             || cpu_family_model == PCM::EMR
+            || cpu_family_model == PCM::GNR
+            || cpu_family_model == PCM::GNR_D
+            || cpu_family_model == PCM::SRF
+            || cpu_family_model == PCM::CWF
             );
     }
 
