@@ -42,6 +42,16 @@ using namespace pcm;
 #define PCM_DELAY_DEFAULT 3.0 // in seconds
 #define MAX_CORES 4096
 
+// Core PMU event encodings used for the L1 fill-buffer latency metric
+// (verified against the perfmon core event JSONs for HSX/BDX/SKX/ICX/SPR/EMR/SKL).
+constexpr uint64 EVENT_L1D_PEND_MISS = 0x48;       // L1D_PEND_MISS
+constexpr uint64 UMASK_L1D_PEND_MISS_PENDING = 0x01; // .PENDING -> L1d fill-buffer occupancy
+constexpr uint64 EVENT_MEM_LOAD_RETIRED = 0xd1;    // MEM_LOAD_RETIRED / MEM_LOAD_UOPS_RETIRED
+constexpr uint64 UMASK_MEM_LOAD_RETIRED_FB_HIT = 0x40; // .FB_HIT (HIT_LFB on HSX/BDX)
+constexpr uint64 UMASK_MEM_LOAD_RETIRED_L1_MISS = 0x08; // .L1_MISS
+constexpr uint64 UMASK_MEM_LOAD_RETIRED_FB_HIT_OR_L1_MISS =
+    UMASK_MEM_LOAD_RETIRED_FB_HIT | UMASK_MEM_LOAD_RETIRED_L1_MISS; // fill-buffer inserts
+
 EventSelectRegister regs[2];
 const uint8_t max_sockets = 64;
 
@@ -401,8 +411,8 @@ void build_registers(PCM *m, PCM::ExtendedCustomCoreEventDescription conf, bool 
     conf.OffcoreResponseMsrValue[1] = 0;
 
 // Registers for L1 cache
-    regs[FB_OCC_RD] = build_core_register(FB_OCC_RD, 0, 1, 1, 1, 0x01, 0x48, 0); //L1d Fill Buffer Occupancy (Read Only)
-    regs[FB_INS_RD] = build_core_register(FB_INS_RD, 0, 1, 1, 1, 0x48, 0xd1, 0); //MEM_LOAD_RETIRED(FB_HIT + L1_MISS)
+    regs[FB_OCC_RD] = build_core_register(FB_OCC_RD, 0, 1, 1, 1, UMASK_L1D_PEND_MISS_PENDING, EVENT_L1D_PEND_MISS, 0); //L1d Fill Buffer Occupancy (Read Only)
+    regs[FB_INS_RD] = build_core_register(FB_INS_RD, 0, 1, 1, 1, UMASK_MEM_LOAD_RETIRED_FB_HIT_OR_L1_MISS, EVENT_MEM_LOAD_RETIRED, 0); //MEM_LOAD_RETIRED(FB_HIT + L1_MISS)
 
 //Restructuring Counters
     for (int i=0; i <5; i++)
