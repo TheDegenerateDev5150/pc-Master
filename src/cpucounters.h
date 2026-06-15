@@ -2808,6 +2808,10 @@ public:
 
     bool LatencyMetricsAvailable() const
     {
+        // Note: GNR/GNR-D are included (P-core: L1D_PEND_MISS.PENDING / MEM_LOAD_RETIRED
+        // encodings match), but the E-core parts SRF/CWF are intentionally excluded since
+        // they lack the L1D_PEND_MISS fill-buffer-occupancy event and use different
+        // MEM_LOAD_UOPS_RETIRED umasks.
         return (
                cpu_family_model == PCM::HASWELLX
             || cpu_family_model == PCM::BDX
@@ -2815,6 +2819,8 @@ public:
             || cpu_family_model == PCM::ICX
             || cpu_family_model == PCM::SPR
             || cpu_family_model == PCM::EMR
+            || cpu_family_model == PCM::GNR
+            || cpu_family_model == PCM::GNR_D
             || useSKLPath()
             );
     }
