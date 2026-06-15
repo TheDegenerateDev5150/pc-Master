@@ -5945,8 +5945,8 @@ PCM::ErrorCode PCM::programServerUncoreLatencyMetrics(bool enable_pmm)
                 // Official perfmon event names (ICX/SPR/EMR iMC uncore, see perfmon/{ICX,SPR,EMR}/events/*_uncore.json):
                 DDRConfig[0] = MC_CH_PCI_PMON_CTL_EVENT(0x80) + MC_CH_PCI_PMON_CTL_UMASK(1);  // DRAM RPQ occupancy   -> UNC_M_RPQ_OCCUPANCY_PCH0
                 DDRConfig[1] = MC_CH_PCI_PMON_CTL_EVENT(0x10) + MC_CH_PCI_PMON_CTL_UMASK(1);  // DRAM RPQ Insert      -> UNC_M_RPQ_INSERTS.PCH0
-                DDRConfig[2] = MC_CH_PCI_PMON_CTL_EVENT(0x81) + MC_CH_PCI_PMON_CTL_UMASK(0);  // DRAM WPQ Occupancy   -> UNC_M_RPQ_OCCUPANCY_PCH1 (event 0x81 is RPQ occupancy PCH1 on ICX/SPR/EMR; WPQ occupancy moved to 0x82/0x83)
-                DDRConfig[3] = MC_CH_PCI_PMON_CTL_EVENT(0x20) + MC_CH_PCI_PMON_CTL_UMASK(0);  // DRAM WPQ Insert      -> UNC_M_WPQ_INSERTS (UMASK 0 selects both PCH0|PCH1)
+                DDRConfig[2] = MC_CH_PCI_PMON_CTL_EVENT(0x82) + MC_CH_PCI_PMON_CTL_UMASK(0);  // DRAM WPQ Occupancy   -> UNC_M_WPQ_OCCUPANCY_PCH0 (event 0x81 was RPQ occupancy PCH1, not WPQ; WPQ occupancy is 0x82/0x83 on ICX/SPR/EMR)
+                DDRConfig[3] = MC_CH_PCI_PMON_CTL_EVENT(0x20) + MC_CH_PCI_PMON_CTL_UMASK(1);  // DRAM WPQ Insert      -> UNC_M_WPQ_INSERTS.PCH0
                 break;
 
             default:
