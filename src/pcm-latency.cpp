@@ -224,29 +224,33 @@ void print_verbose(PCM *m, int ddr_ip)
     if (ddr_ip == DDR)
     {
         cout << "DDR Latency =================================\n";
-        cout << "Read Inserts Socket0: " << uncore_event[DDR].skt[0].rinsert << "\n";
-        cout << "Read Occupancy Socket0: " << uncore_event[DDR].skt[0].roccupancy << "\n";
-        cout << "Read Inserts Socket1: " << uncore_event[DDR].skt[1].rinsert << "\n";
-        cout << "Read Occupancy Socket1: " << uncore_event[DDR].skt[1].roccupancy << "\n";
+        for (unsigned int n=0; n<m->getNumSockets(); n++)
+        {
+            cout << "Read Inserts Socket" << n << ": " << uncore_event[DDR].skt[n].rinsert << "\n";
+            cout << "Read Occupancy Socket" << n << ": " << uncore_event[DDR].skt[n].roccupancy << "\n";
+        }
         cout << "\n";
-        cout << "Write Inserts Socket0: " << uncore_event[DDR].skt[0].winsert << "\n";
-        cout << "Write Occupancy Socket0: " << uncore_event[DDR].skt[0].woccupancy << "\n";
-        cout << "Write Inserts Socket1: " << uncore_event[DDR].skt[1].winsert << "\n";
-        cout << "Write Occupancy Socket1: " << uncore_event[DDR].skt[1].woccupancy << "\n";
+        for (unsigned int n=0; n<m->getNumSockets(); n++)
+        {
+            cout << "Write Inserts Socket" << n << ": " << uncore_event[DDR].skt[n].winsert << "\n";
+            cout << "Write Occupancy Socket" << n << ": " << uncore_event[DDR].skt[n].woccupancy << "\n";
+        }
     }
 
     if (ddr_ip == PMM)
     {
         cout << "PMM Latency =================================\n";
-        cout << "Read Inserts Socket0: " << uncore_event[PMM].skt[0].rinsert << "\n";
-        cout << "Read Occupancy Socket0: " << uncore_event[PMM].skt[0].roccupancy << "\n";
-        cout << "Read Inserts Socket1: " << uncore_event[PMM].skt[1].rinsert << "\n";
-        cout << "Read Occupancy Socket1: " << uncore_event[PMM].skt[1].roccupancy << "\n";
+        for (unsigned int n=0; n<m->getNumSockets(); n++)
+        {
+            cout << "Read Inserts Socket" << n << ": " << uncore_event[PMM].skt[n].rinsert << "\n";
+            cout << "Read Occupancy Socket" << n << ": " << uncore_event[PMM].skt[n].roccupancy << "\n";
+        }
         cout << "\n";
-        cout << "Write Inserts Socket0: " << uncore_event[PMM].skt[0].winsert << "\n";
-        cout << "Write Occupancy Socket0: " << uncore_event[PMM].skt[0].woccupancy << "\n";
-        cout << "Write Inserts Socket1: " << uncore_event[PMM].skt[1].winsert << "\n";
-        cout << "Write Occupancy Socket1: " << uncore_event[PMM].skt[1].woccupancy << "\n";
+        for (unsigned int n=0; n<m->getNumSockets(); n++)
+        {
+            cout << "Write Inserts Socket" << n << ": " << uncore_event[PMM].skt[n].winsert << "\n";
+            cout << "Write Occupancy Socket" << n << ": " << uncore_event[PMM].skt[n].woccupancy << "\n";
+        }
     }
 }
 
@@ -440,7 +444,7 @@ void build_registers(PCM *m, PCM::ExtendedCustomCoreEventDescription conf, bool 
 
         PCM::ErrorCode status = m->program(PCM::EXT_CUSTOM_CORE_EVENTS, &conf);
         check_status(m, status);
-        m->programServerUncoreLatencyMetrics(enable_pmm);
+        m->checkError(m->programServerUncoreLatencyMetrics(enable_pmm));
     }
     else
     {
