@@ -4361,7 +4361,7 @@ void printHelpText( std::string const & programName ) {
 #endif
     std::cout << "    -r|--reset           : Reset programming of the performance counters.\n";
     std::cout << "    -D|--debug level     : level = 0: no debug info, > 0 increase verbosity.\n";
-#if !defined(__APPLE__) && !defined(_WIN32)
+#if !defined(_WIN32)
     std::cout << "    -R|--real-time       : If possible the daemon will run with real time\n";
     std::cout << "                           priority, could be useful under heavy load to \n";
     std::cout << "                           stabilize the async counter fetching.\n";
@@ -4392,9 +4392,7 @@ int mainThrows(int argc, char * argv[]) {
     bool useSSL = false;
 #endif
     bool forcedProgramming = false;
-#ifndef __APPLE__
     bool useRealtimePriority = false;
-#endif
     bool forceRTMAbortMode = false;
     bool printTopology = false;
     bool useIPv4 = false;
@@ -4499,12 +4497,10 @@ int mainThrows(int argc, char * argv[]) {
                     throw std::runtime_error( "main: Error no debug level argument given" );
                 }
             }
-#ifndef __APPLE__
             else if ( check_argument_equals( argv[i], {"-R", "--real-time"} ) )
             {
                 useRealtimePriority = true;
             }
-#endif
             else if ( check_argument_equals( argv[i], {"--help", "-h", "/h"} ) )
             {
                 printHelpText( argv[0] );
@@ -4628,7 +4624,7 @@ int mainThrows(int argc, char * argv[]) {
     }
 #endif
 
-#if !defined(__APPLE__) && !defined(_WIN32)
+#if !defined(_WIN32)
     if ( useRealtimePriority ) {
         int priority = sched_get_priority_min( SCHED_RR );
         if ( priority == -1 ) {
