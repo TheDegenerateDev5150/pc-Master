@@ -688,6 +688,11 @@ public:
     };
 private:
     std::unordered_map<std::string, int> strToUncorePMUID_ {
+        {"cbo", CBO_PMU_ID},
+        {"cha", CBO_PMU_ID},
+        {"mdf", MDF_PMU_ID},
+        {"pcu", PCU_PMU_ID},
+        {"ubox", UBOX_PMU_ID},
         {"pciex8", PCIE_GEN5x8_PMU_ID},
         {"pciex16", PCIE_GEN5x16_PMU_ID}
     };
@@ -1268,6 +1273,7 @@ private:
             {
                 switch (cpu_family_model)
                 {
+                case CWF:
                 case SPR:
                 case EMR:
                 case GNR:
@@ -1756,6 +1762,7 @@ public:
        case ELKHART_LAKE:
        case JASPER_LAKE:
        case SRF:
+       case CWF:
        case GRR:
             return eCoreOCREvent;
        }
@@ -1950,6 +1957,7 @@ public:
     //! \brief Identifiers of supported CPU models
     enum SupportedCPUModels
     {
+        CWF =           PCM_CPU_FAMILY_MODEL(6, 221),
         NEHALEM_EP =    PCM_CPU_FAMILY_MODEL(6, 26),
         NEHALEM =       PCM_CPU_FAMILY_MODEL(6, 30),
         ATOM =          PCM_CPU_FAMILY_MODEL(6, 28),
@@ -2112,6 +2120,7 @@ public:
         case NEHALEM_EX:
         case WESTMERE_EX:
             return 4;
+        case CWF:
         case JAKETOWN:
         case IVYTOWN:
         case HASWELLX:
@@ -2142,6 +2151,7 @@ public:
         case NEHALEM_EX:
         case WESTMERE_EX:
             return 2;
+        case CWF:
         case JAKETOWN:
         case IVYTOWN:
         case HASWELLX:
@@ -2173,6 +2183,7 @@ public:
         case NEHALEM_EX:
         case WESTMERE_EX:
             return 4;
+        case CWF:
         case JAKETOWN:
         case IVYTOWN:
         case HASWELLX:
@@ -2207,6 +2218,7 @@ public:
         case NEHALEM_EX:
         case WESTMERE_EX:
             return 4;
+        case CWF:
         case JAKETOWN:
         case IVYTOWN:
         case HASWELLX:
@@ -2255,6 +2267,8 @@ public:
         case ARL:
         case PTL:
             return 12;
+        case CWF:
+            return 8;
         case SNOWRIDGE:
         case ELKHART_LAKE:
         case JASPER_LAKE:
@@ -2325,6 +2339,7 @@ public:
     {
         switch (cpu_family_model)
         {
+        case CWF:
         case NEHALEM_EP:
         case NEHALEM_EX:
         case WESTMERE_EP:
@@ -2584,6 +2599,7 @@ public:
     {
         return (
                     cpu_family_model == PCM::JAKETOWN
+                 || cpu_family_model == PCM::CWF
                  || cpu_family_model == PCM::IVYTOWN
                  || cpu_family_model == PCM::SANDY_BRIDGE
                  || cpu_family_model == PCM::IVY_BRIDGE
@@ -2624,6 +2640,7 @@ public:
     {
         return (
              cpu_family_model == PCM::JAKETOWN
+          || cpu_family_model == PCM::CWF
           || cpu_family_model == PCM::IVYTOWN
           || cpu_family_model == PCM::HASWELLX
           || cpu_family_model == PCM::BDX_DE
@@ -2670,6 +2687,7 @@ public:
         return getQPILinksPerSocket() > 0 &&
             (
                cpu_family_model == PCM::NEHALEM_EX
+            || cpu_family_model == PCM::CWF
             || cpu_family_model == PCM::WESTMERE_EX
             || cpu_family_model == PCM::JAKETOWN
             || cpu_family_model == PCM::IVYTOWN
@@ -2689,6 +2707,7 @@ public:
         return getQPILinksPerSocket() > 0 &&
             (
                cpu_family_model == PCM::NEHALEM_EX
+            || cpu_family_model == PCM::CWF
             || cpu_family_model == PCM::WESTMERE_EX
             || cpu_family_model == PCM::JAKETOWN
             || cpu_family_model == PCM::IVYTOWN
@@ -2704,6 +2723,7 @@ public:
     bool localMemoryRequestRatioMetricAvailable() const
     {
         return cpu_family_model == PCM::HASWELLX
+            || cpu_family_model == PCM::CWF
             || cpu_family_model == PCM::BDX
             || cpu_family_model == PCM::SKX
             || cpu_family_model == PCM::ICX
@@ -2725,6 +2745,7 @@ public:
                cpu_family_model == PCM::SRF
             || cpu_family_model == PCM::GNR
             || cpu_family_model == PCM::GNR_D
+            || cpu_family_model == PCM::CWF
             );
     }
 
@@ -2768,12 +2789,14 @@ public:
             || cpu_family_model == PCM::SRF
             || cpu_family_model == PCM::GNR
             || cpu_family_model == PCM::GNR_D
+            || cpu_family_model == PCM::CWF
         );
     }
 
     bool uncoreFrequencyMetricAvailable() const
     {
         return MSR.empty() == false
+                && PCM::CWF != cpu_family_model
                 && getMaxNumOfUncorePMUs(UBOX_PMU_ID) > 0ULL
                 && getNumCores() == getNumOnlineCores()
                 && PCM::GNR != cpu_family_model
@@ -2784,6 +2807,10 @@ public:
 
     bool LatencyMetricsAvailable() const
     {
+        // Note: GNR/GNR-D are included (P-core: L1D_PEND_MISS.PENDING / MEM_LOAD_RETIRED
+        // encodings match), but the E-core parts SRF/CWF are intentionally excluded since
+        // they lack the L1D_PEND_MISS fill-buffer-occupancy event and use different
+        // MEM_LOAD_UOPS_RETIRED umasks.
         return (
                cpu_family_model == PCM::HASWELLX
             || cpu_family_model == PCM::BDX
@@ -2791,6 +2818,8 @@ public:
             || cpu_family_model == PCM::ICX
             || cpu_family_model == PCM::SPR
             || cpu_family_model == PCM::EMR
+            || cpu_family_model == PCM::GNR
+            || cpu_family_model == PCM::GNR_D
             || useSKLPath()
             );
     }
@@ -2802,6 +2831,10 @@ public:
             || cpu_family_model == PCM::ICX
             || cpu_family_model == PCM::SPR
             || cpu_family_model == PCM::EMR
+            || cpu_family_model == PCM::GNR
+            || cpu_family_model == PCM::GNR_D
+            || cpu_family_model == PCM::SRF
+            || cpu_family_model == PCM::CWF
             );
     }
 
@@ -2862,6 +2895,7 @@ public:
     {
         return (
             cpu_family_model == PCM::JAKETOWN
+            || cpu_family_model == PCM::CWF
             || cpu_family_model == PCM::SNOWRIDGE
             || cpu_family_model == PCM::IVYTOWN
             || cpu_family_model == PCM::HASWELLX
@@ -2890,6 +2924,7 @@ public:
     {
         return (
             cpu_family_model_ == PCM::SKX
+         || cpu_family_model_ == PCM::CWF
          || cpu_family_model_ == PCM::ICX
          || cpu_family_model_ == PCM::SPR
          || cpu_family_model_ == PCM::EMR
@@ -2915,6 +2950,7 @@ public:
     {
         return (
             cpu_family_model == PCM::SKX
+         || cpu_family_model == PCM::CWF
          || cpu_family_model == PCM::ICX
          || cpu_family_model == PCM::SPR
          || cpu_family_model == PCM::EMR
@@ -4519,6 +4555,7 @@ uint64 getL2CacheMisses(const CounterStateType & before, const CounterStateType 
         || cpu_family_model == PCM::LNL
         || cpu_family_model == PCM::ARL
         || cpu_family_model == PCM::PTL
+        || cpu_family_model == PCM::CWF
         ) {
         return after.Event[BasicCounterState::SKLL2MissPos] - before.Event[BasicCounterState::SKLL2MissPos];
     }
@@ -4636,6 +4673,7 @@ uint64 getL3CacheHitsSnoop(const CounterStateType & before, const CounterStateTy
         || cpu_family_model == PCM::LNL
         || cpu_family_model == PCM::ARL
         || cpu_family_model == PCM::PTL
+        || cpu_family_model == PCM::CWF
         )
     {
         const int64 misses = getL3CacheMisses(before, after);

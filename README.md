@@ -54,7 +54,6 @@ PCM provides a number of command-line utilities for real-time monitoring:
 Graphical front ends:
 - **pcm Grafana dashboard** :  front-end for Grafana (in [scripts/grafana](scripts/grafana) directory). Full Grafana Readme is [here](scripts/grafana/README.md)
 ![pcm grafana output](https://raw.githubusercontent.com/wiki/intel/pcm/pcm-dashboard.png)
-- **pcm-sensor** :  front-end for KDE KSysGuard
 - **pcm-service** :  front-end for Windows perfmon
 
 There are also utilities for reading/writing model specific registers (**pcm-msr**), PCI configuration registers (**pcm-pcicfg**), memory mapped registers (**pcm-mmio**) and TPMI registers (**pcm-tpmi**) supported on Linux, Windows, FreeBSD and DragonFlyBSD.

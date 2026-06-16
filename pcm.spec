@@ -81,7 +81,6 @@ rm -rf $RPM_BUILD_ROOT
 %{_sbindir}/pcm-accel
 %{_sbindir}/pcm-pcie
 %{_sbindir}/pcm-power
-%{_sbindir}/pcm-sensor
 %{_sbindir}/pcm-sensor-server
 %{_sbindir}/pcm-tsx
 %{_sbindir}/pcm-raw
