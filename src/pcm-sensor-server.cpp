@@ -2868,6 +2868,11 @@ static constexpr std::chrono::seconds kRequestHeaderDeadline{ 30 };
 static constexpr size_t kMaxRequestLineBytes = 8192;
 static constexpr size_t kMaxHeaderLineBytes  = 8192;
 static constexpr size_t kMaxTotalHeaderBytes = 64 * 1024;
+// Upper bound on the number of distinct headers (request headers plus any
+// chunked trailer headers) accepted for a single request. The cumulative
+// byte cap above already bounds total memory, but an explicit count ceiling
+// keeps the headers_ container small and rejects header-flood requests early.
+static constexpr size_t kMaxHeaderCount = 100;
 
 // Scoped guard that temporarily tightens the underlying socket's SO_RCVTIMEO
 // so a single blocking read cannot exceed the remaining wall-clock budget,
@@ -3121,6 +3126,7 @@ basic_socketstream<CharT, Traits>& operator>>( basic_socketstream<CharT, Traits>
     std::string line;
     std::string concatLine;
     size_t totalHeaderBytes = 0;
+    size_t headerCount = 0;
     bool haveCurrentHeader = false;
     while ( true ) {
         readLineBounded( rs, line, kMaxHeaderLineBytes, requestDeadline );
@@ -3165,6 +3171,9 @@ basic_socketstream<CharT, Traits>& operator>>( basic_socketstream<CharT, Traits>
                 if ( hh.type() == HeaderType::Invalid ) {
                     throw std::runtime_error( std::string("Bad Request received: ") + hh.invalidReason() );
                 }
+                if ( ++headerCount > kMaxHeaderCount ) {
+                    throw std::runtime_error( "HTTP request exceeds maximum allowed header count" );
+                }
                 m.addHeader( hh );
                 concatLine.clear();
                 haveCurrentHeader = false;
@@ -3188,6 +3197,9 @@ basic_socketstream<CharT, Traits>& operator>>( basic_socketstream<CharT, Traits>
             hh.debugPrint();
             if ( hh.type() == HeaderType::Invalid ) {
                 throw std::runtime_error( std::string("Bad Request received: ") + hh.invalidReason() );
+            }
+            if ( ++headerCount > kMaxHeaderCount ) {
+                throw std::runtime_error( "HTTP request exceeds maximum allowed header count" );
             }
             m.addHeader( hh );
             concatLine.clear();
@@ -3300,6 +3312,9 @@ basic_socketstream<CharT, Traits>& operator>>( basic_socketstream<CharT, Traits>
                     if ( hh.type() == HeaderType::Invalid ) {
                         // Bad request, throw exception, catch in httpconnection, create response there
                         throw std::runtime_error( std::string("Bad Request received: ") + hh.invalidReason() );
+                    }
+                    if ( ++headerCount > kMaxHeaderCount ) {
+                        throw std::runtime_error( "HTTP request exceeds maximum allowed header count" );
                     }
                     m.addHeader( hh );
                     ++numHeadersAdded;
